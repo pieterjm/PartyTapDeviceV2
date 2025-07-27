@@ -11,6 +11,8 @@ static SemaphoreHandle_t lvgl_sem;
 TapConfig ui_tapConfig;
 String ui_PinEnteredPin = ""; // The actual entered PIN on the PIN Screen
 String ui_PinHidePin = ""; // a string of stars displayed on the screen
+unsigned long ui_message_millis = 0; // millis when a message has been set
+bool bFreeDrink = false;
 
 #define UI_BUTTON_TAP_TAP "PRESS TO START"
 #define UI_BUTTON_TAP_PAUSE "PRESS TO PAUSE"
@@ -23,6 +25,7 @@ Arduino_DataBus *bus = new Arduino_ESP32QSPI(TFT_CS, TFT_SCK, TFT_SDA0, TFT_SDA1
 Arduino_GFX *g = new Arduino_AXS15231B(bus, GFX_NOT_DEFINED, 0, false, TFT_res_W, TFT_res_H);
 Arduino_Canvas *gfx = new Arduino_Canvas(TFT_res_W, TFT_res_H, g, 0, 0, TFT_rot);
 AXS15231B_Touch touch(Touch_SCL, Touch_SDA, Touch_INT, Touch_ADDR, TFT_rot);
+
 
 // the tap screen
 lv_obj_t * ui_ScreenTap;
@@ -192,21 +195,26 @@ void ui_update_server_branding(const char *s) {
     }
 }
 
+void internal_set_payment_message(const char *s) {
+    lv_label_set_text(ui_LabelAboutMessage, s);
+    lv_label_set_text(ui_LabelPaymentMessage,s);
+    lv_obj_clear_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
+    ui_message_millis = millis();
+}
+
 // set the message of the payment status on the payment screen
 void ui_set_payment_message(const char *s) {
     if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_label_set_text(ui_LabelPaymentMessage,s);
-        lv_obj_clear_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
+        internal_set_payment_message(s);
         xSemaphoreGive(lvgl_sem);            
-    }
+    }            
 }
 
 
-void ui_hide_payment_message() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_obj_add_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
-        xSemaphoreGive(lvgl_sem);            
-    }
+void internal_hide_payment_message() {
+    lv_obj_add_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
 }
 
 
@@ -515,10 +523,18 @@ void ui_event_PanelAboutHeaderClicked(lv_event_t * e) {
 
 //  Button clicked on the selection screen
 void ui_event_ButtonAboutClicked(lv_event_t * e) {
+#ifdef DEBUG
+    Serial.println("[ui_event_ButtonAboutClicked]");
+#endif
     int product = int(lv_event_get_user_data(e));
 
-    main_get_invoice(product);
-
+    if ( bFreeDrink ) {
+        bFreeDrink = false;
+        lv_disp_load_scr(ui_ScreenTap);
+    } else {
+        internal_set_payment_message("CREATING INVOICE");
+        main_get_invoice(product);
+    }
 }
 
 // Cancel clicked on the PIN screen, go back to the Start page
@@ -601,6 +617,7 @@ void ui_event_ButtonTapStartClicked(lv_event_t * e) {
 
 
 void ui_event_ButtonPaymentCancelClicked(lv_event_t * e) {
+    lv_obj_add_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
     lv_disp_load_scr(ui_ScreenAbout);
 }
 
@@ -623,7 +640,9 @@ void ui_event_button_admin_close_clicked(lv_event_t * e) {
 }
 
 void ui_event_button_admin_free_clicked(lv_event_t * e) {
-
+    bFreeDrink = true;
+    lv_obj_add_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
+    lv_disp_load_scr(ui_ScreenAbout);
 }
 
 // get the current config and go to the config screen
@@ -865,6 +884,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_obj_clear_flag(ui_ButtonAdminFree, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_bg_color(ui_ButtonAdminFree, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_bg_opa(ui_ButtonAdminFree, 255, LV_STATE_ANY);
+    lv_obj_add_flag(ui_ButtonAdminFree,LV_OBJ_FLAG_HIDDEN);
 
     ui_LabelAdminFree = lv_label_create(ui_ButtonAdminFree);
     lv_obj_set_width(ui_LabelAdminFree, LV_SIZE_CONTENT);   /// 1
@@ -1735,6 +1755,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_style_bg_color(ui_ButtonConfigUpdate, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_bg_opa(ui_ButtonConfigUpdate, 255, LV_STATE_ANY);
     lv_obj_add_flag(ui_ButtonConfigUpdate,LV_OBJ_FLAG_HIDDEN); // Hide the Update button for the moment
+    lv_obj_add_flag(ui_ButtonConfigUpdate,LV_OBJ_FLAG_HIDDEN);
 
     ui_LabelConfigUpdate = lv_label_create(ui_ButtonConfigUpdate);
     lv_obj_set_width(ui_LabelConfigUpdate, LV_SIZE_CONTENT);   /// 1
@@ -1942,59 +1963,62 @@ void ui_init(void) {
     // Display setup
     if(!gfx->begin(40000000UL)) {
         Serial.println("Failed to initialize display!");
-                return;
-            }
-            gfx->setRotation(2);
-            gfx->fillScreen(BLACK);
+        return;
+    }
+    
+    int rotation = 0;
+    gfx->setRotation(rotation);
+    gfx->fillScreen(BLACK);
         
-            // Switch backlight on
-            pinMode(TFT_BL, OUTPUT);
-            digitalWrite(TFT_BL, HIGH);
+    // Switch backlight on
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH);
         
-            // Touch setup
-            if(!touch.begin()) {
-                Serial.println("Failed to initialize touch module!");
-                return;
-            }
-            touch.enOffsetCorrection(true);
-            touch.setRotation(2);
-            //touch.setOffsets(Touch_X_min, Touch_X_max, TFT_res_W-1, Touch_Y_min, Touch_Y_max, TFT_res_H-1);
-            touch.setOffsets(12, 310, 319, 0, 479, 479);
-        
-            // Init LVGL
-            lv_init();
-        
-            // Set a tick source so that LVGL will know how much time elapsed
-            lv_tick_set_cb(millis_cb);
-        
-            // Register print function for debugging
-            #if LV_USE_LOG != 0
-            lv_log_register_print_cb(my_print);
-            #endif
-        
-            // Initialize the display buffer
-            uint32_t screenWidth = gfx->width();
-            uint32_t screenHeight = gfx->height();
-            Serial.printf("width: %d, Height: %d\n",screenWidth,screenHeight);
-            uint32_t bufSize = screenWidth * screenHeight / 10;
-            lv_color_t *disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-            if (!disp_draw_buf) {
-                Serial.println("LVGL failed to allocate display buffer!");
-                return;
-            }
-        
-            // Initialize the display driver
+    // Touch setup
+    if(!touch.begin()) {
+        Serial.println("Failed to initialize touch module!");
+        return;
+    }
             
-            lv_display_t *disp = lv_display_create(screenWidth, screenHeight);
-            lv_display_set_flush_cb(disp, my_disp_flush);
-            lv_display_set_buffers(disp, disp_draw_buf, NULL, bufSize * 2, LV_DISPLAY_RENDER_MODE_PARTIAL);
-            lv_display_set_rotation(disp,LV_DISPLAY_ROTATION_0);
+    touch.enOffsetCorrection(true);
+    touch.setRotation(rotation);
+    
+    //touch.setOffsets(Touch_X_min, Touch_X_max, TFT_res_W-1, Touch_Y_min, Touch_Y_max, TFT_res_H-1);
+    touch.setOffsets(12, 310, 319, 0, 479, 479);
         
-            // Initialize the input device driver
-            lv_indev_t *indev = lv_indev_create();
-            lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-            lv_indev_set_read_cb(indev, my_touchpad_read);
+    // Init LVGL
+    lv_init();
         
+    // Set a tick source so that LVGL will know how much time elapsed
+    lv_tick_set_cb(millis_cb);
+        
+    // Register print function for debugging
+    #if LV_USE_LOG != 0
+    lv_log_register_print_cb(my_print);
+    #endif
+
+    // Initialize the display buffer
+    uint32_t screenWidth = gfx->width();
+    uint32_t screenHeight = gfx->height();
+    Serial.printf("width: %d, Height: %d\n",screenWidth,screenHeight);
+    uint32_t bufSize = screenWidth * screenHeight / 10;
+    lv_color_t *disp_draw_buf = (lv_color_t *)heap_caps_malloc(bufSize * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!disp_draw_buf) {
+        Serial.println("LVGL failed to allocate display buffer!");
+        return;
+    }
+
+    // Initialize the display driver
+    
+    lv_display_t *disp = lv_display_create(screenWidth, screenHeight);
+    lv_display_set_flush_cb(disp, my_disp_flush);
+    lv_display_set_buffers(disp, disp_draw_buf, NULL, bufSize * 2, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_rotation(disp,LV_DISPLAY_ROTATION_0);
+
+    // Initialize the input device driver
+    lv_indev_t *indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(indev, my_touchpad_read);        
 
     ui_ScreenAbout_screen_init();    
     ui_ScreenPayment_screen_init();
@@ -2009,10 +2033,17 @@ void ui_init(void) {
 
 
 void ui_loop(void *parameters) {
-    while ( 1 == 1 ) {
+
+    while ( 1 == 1 ) {        
         if ( xSemaphoreTake(lvgl_sem,100) == pdTRUE ) {
             lv_task_handler();
             gfx->flush();
+
+            if (( ui_message_millis != 0 ) && ( millis() - ui_message_millis > 3000 )) {
+                ui_message_millis = 0;
+                internal_hide_payment_message();
+            }
+
             xSemaphoreGive(lvgl_sem);            
         }        
         vTaskDelay(25);

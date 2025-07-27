@@ -23,7 +23,6 @@ bool ui_admin_screen_active();
 
 bool ui_payment_screen_active();
 void ui_set_payment_message(const char *s);
-void ui_hide_payment_message();
 void ui_load_payment_screen();
 
 void ui_load_about_screen(); 

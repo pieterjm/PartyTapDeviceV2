@@ -1,6 +1,7 @@
 // Add flow meter
 // Add valve
 #define DEBUG
+// #define NOTONE
 
 #include <Arduino.h>
 #include <Adafruit_PN532_NTAG424.h>
@@ -13,12 +14,28 @@
 #include "bitcointap.h"
 #include "productconfig.h"
 #include <LittleFS.h>
-
+#include <BackgroundAudioWAV.h>
+#include <ESP32I2SAudio.h>
+#include "pingwav.h"
+#include "levelup.h"
 #include "FreeRTOS.h"
+
+
+
 
 static SemaphoreHandle_t nfc_sem;
 static SemaphoreHandle_t control_sem;
 
+
+#define AUDIO_I2S_PORT I2S_NUM_0
+#define AUDIO_I2S_MCK_IO -1 // MCK
+#define AUDIO_I2S_BCK_IO 42 // BCK
+#define AUDIO_I2S_LRCK_IO 2   // LCK
+#define AUDIO_I2S_DO_IO 41  // DIN
+
+
+ESP32I2SAudio audio(AUDIO_I2S_BCK_IO,AUDIO_I2S_LRCK_IO,AUDIO_I2S_DO_IO,AUDIO_I2S_MCK_IO);
+ROMBackgroundAudioWAV BMP(audio);
 
 TaskHandle_t nfcTask_Handle;
 TaskHandle_t lvglTask_Handle;
@@ -30,7 +47,6 @@ String payment_pin = "";
 String config_wspath = "";
 uint8_t main_shared_lnurlw[512];
 int main_shared_lnurlw_len = 0;
-
 
 ProductConfig productConfig;
 TapConfig main_shared_tapConfig;
@@ -55,6 +71,8 @@ int main_tap_remaining_credit = 0;  // the amount of credit available for tappin
 
 #define WS_EVENTTYPE_INVOICE "invoice"
 #define WS_EVENTTYPE_PAID  "paid"
+#define WS_EVENTTYPE_PAYMENTFAILED "paymentfailed"
+#define WS_EVENTTYPE_SWITCHES "switches"
 
 void ws_request_invoice(String switchid);
 
@@ -63,13 +81,15 @@ void checkNetwork();
 void reportState();
 void updateTapProgress();
 void expireInvoice();
-Task hidePaymentMessageTask(5 * TASK_SECOND,TASK_ONCE,&ui_hide_payment_message);
+void checkInvoiceReceived();
 Task checkNetworkTask(5 * TASK_SECOND, TASK_FOREVER,&checkNetwork);
 Task reportStateTask(2 * TASK_SECOND, TASK_FOREVER,&reportState);
 Task tapProgressTask(TASK_IMMEDIATE, TASK_FOREVER, &updateTapProgress);
 Task expireInvoiceTask(TASK_IMMEDIATE,TASK_ONCE,&expireInvoice);
+Task checkInvoiceReceivedTask(TASK_IMMEDIATE, TASK_ONCE,&checkInvoiceReceived);
 
 Servo *main_servo;
+Servo *tone_servo;
 
 // static QueueHandle_t msgQueue;
 
@@ -89,6 +109,47 @@ void my_print(lv_log_level_t level, const char *buf) {
 }
 #endif
 
+
+void tone_negative() {
+#ifdef NOTONE
+    return;
+#endif
+    BMP.flush(); // Stop any existing output, reset for new file
+    BMP.write(levelup_wav, sizeof(levelup_wav));
+}
+
+void tone_positive() {
+#ifdef NOTONE
+    return;
+#endif
+    BMP.flush(); // Stop any existing output, reset for new file
+    BMP.write(pingwav, sizeof(pingwav));
+}
+
+void tone_switches() {
+    tone_positive();
+}
+
+void tone_online() {
+    tone_positive();
+}
+
+void tone_offline() {
+    tone_negative();
+}
+
+
+void tone_paid() {
+    tone_positive();
+}
+
+void tone_paymentfailed() {
+    tone_negative();
+}
+
+
+
+
 // servo functions
 
 void internal_servo_write(int i) {
@@ -107,6 +168,20 @@ void internal_tap_close() {
     internal_servo_write(main_shared_tapConfig.getServoClose());
 }
 
+void internal_set_message(const char *s) {
+    ui_set_payment_message(s);
+}
+
+// This function is triggered by a taskscheduler at the moment an invoice is requested
+// if the invoice is not received for some reason, the user is taken back to the 
+// start screen with a message that no invoice was received
+void checkInvoiceReceived() {
+#ifdef DEBUG
+  Serial.println("[checkInvoiceReceived]");
+#endif  
+    internal_set_message("NO INVOICE RECEIVED");
+    ui_load_about_screen();
+}
 
 // write to servo
 void main_servo_write(int i) {
@@ -115,8 +190,6 @@ void main_servo_write(int i) {
         xSemaphoreGive(control_sem);        
     }
 }
-
-
 
 void main_tap_open() {
 #ifdef DEBUG
@@ -163,6 +236,9 @@ void main_firmware_update() {
 
 // called from UI thread, so lock before accessing variables
 bool main_verify_pin(String entered_pin) {
+#ifdef DEBUG
+    Serial.println("[main_verify_pin]");
+#endif    
     String pin = "";
     
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
@@ -181,7 +257,10 @@ bool main_verify_pin(String entered_pin) {
 // called from UI thread, so lock before accessing variables
 void main_get_invoice(int product) {
     int i;
+
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+
+
         ws_request_invoice(productConfig.getProduct(product)->getSwitchID());
         xSemaphoreGive(control_sem);        
     }
@@ -214,6 +293,7 @@ void main_nfc_read_success(const uint8_t *buffer,int num) {
     Serial.println("[main_nfc_read_succes]");
 #endif    
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+        internal_set_message("NFC READ");
 
         // if there is an invoice availble, do the withdraw now, otherwise, requiest an invoice
         if ( payment_request.length() > 0 ) {           
@@ -324,6 +404,8 @@ void ws_request_invoice(String switchid) {
 #ifdef DEBUG
     Serial.println("[ws_request_invoice]");
 #endif
+    checkInvoiceReceivedTask.restartDelayed(TASK_SECOND * 15);
+
     String wsmessage = PSTR("{\"event\":\"createinvoice\",\"switch_id\":\"");
     wsmessage +=  switchid;
     wsmessage += PSTR("\"}");
@@ -353,7 +435,9 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                 }
                 const char *eventtype = doc["event"].as<const char *>();
                 Serial.printf("[ws_event] eventtype: %s\n",eventtype);
-                if ( strcmp(eventtype,"switches") == 0 ) {
+                if ( strcmp(eventtype,WS_EVENTTYPE_SWITCHES) == 0 ) {
+                    tone_switches();
+
                     productConfig.parse(&doc);
                     productConfig.save();
 
@@ -363,11 +447,12 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                         labels[i] = (char *)productConfig.getProduct(i)->getLabel();
                     }
                     ui_init_switches(productConfig.getNumProducts(),(const char **)labels);
-                } else if ( strcmp(eventtype,"invoice") == 0 ) {
+                } else if ( strcmp(eventtype,WS_EVENTTYPE_INVOICE) == 0 ) {
                     payment_request = doc["pr"].as<const char *>();
                     payment_hash = doc["payment_hash"].as<const char *>();
 
                     // start an expire invoice task
+                    checkInvoiceReceivedTask.disable();
                     expireInvoiceTask.restartDelayed(TASK_SECOND * 120);
                         
                     // make a withdraw is lengthis larger than 0, otherwise navigate to the payment screen
@@ -375,14 +460,16 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     if ( main_shared_lnurlw_len > 0 ) {                 
                         ws_lnurlw_withdraw((const char *)main_shared_lnurlw); 
                         main_shared_lnurlw[0] = '\0';
-                        main_shared_lnurlw_len = 0;                      
-                    } else {
-                        ui_load_payment_screen();
-                        ui_display_qrcode(payment_request.c_str(),payment_request.length());
-                    }
+                        main_shared_lnurlw_len = 0;                     
+                    } 
+                    
+                    ui_load_payment_screen();
+                    ui_display_qrcode(payment_request.c_str(),payment_request.length());
+                    
+                } else if ( strcmp(eventtype,WS_EVENTTYPE_PAID) == 0 ) {
+                    tone_paid();
+                    internal_set_message("INVOICE PAID");
 
-                } else if ( strcmp(eventtype,"paid") == 0 ) {
-                    ui_set_payment_message("INVOICE PAID");
 
                     // expiore the invoice
                     expireInvoiceTask.disable();
@@ -400,7 +487,12 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
 #ifdef DEBUG
                     Serial.printf("[ws_event] main_tap_duration = %d\n",main_tap_duration);
 #endif
-
+                } else if ( strcmp(eventtype,WS_EVENTTYPE_PAYMENTFAILED) == 0 ) {   
+                    internal_set_message("PAYMENT FAILED");
+                    tone_paymentfailed();
+                    Serial.println("[ws_event] payment Failed");
+                   //tone_paymentfailed();
+                   // delay(200);
                 } else {
                     Serial.println("another");
                 }
@@ -436,7 +528,7 @@ void nfc_loop(void *parameters)
             continue;
         }
 
-
+        ui_set_payment_message("READING NFC");
 
         if ((uidLength != 7) && (uidLength != 4)) {
             Serial.println("uidLength incorrect");
@@ -508,7 +600,6 @@ void main_loop(void *parameters) {
 #endif
     Scheduler taskScheduler;
 
-    taskScheduler.addTask(hidePaymentMessageTask);
     taskScheduler.addTask(checkNetworkTask);
     taskScheduler.addTask(reportStateTask);
     taskScheduler.addTask(tapProgressTask);
@@ -530,7 +621,8 @@ void main_loop(void *parameters) {
 
     // when websocket hangs, ie when lnbits is broken. it may appear that the program is frozen
 
-    while ( 1 == 1 ) {
+    while ( 1 == 1 ) {  
+
         if ( xSemaphoreTake(control_sem,200) == pdTRUE ) {
             taskScheduler.execute();
             xSemaphoreGive(control_sem);
@@ -605,13 +697,23 @@ void nfc_init() {
 void setup() {
     delay(5000);
 
+    BMP.begin();
+    
+
+    tone_online();
+
+
 
     Serial.begin(115200);
     Serial.println("[setup] Starting up");
 
-
     LittleFS.begin(true);
     main_shared_tapConfig.load();
+
+
+
+
+
 
     // main_shared_tapConfig.setWiFiSSID("BitcoinTaps");
     // main_shared_tapConfig.setWiFiPWD("aqlvoqfy");
@@ -640,9 +742,19 @@ void setup() {
       }
 
 
+    // ESP32PWM::allocateTimer(0);
+    // ESP32PWM::allocateTimer(1);
+    // ESP32PWM::allocateTimer(2);
+    // ESP32PWM::allocateTimer(3);
+
+
+
     main_servo = new Servo();
     main_servo->attach(5);
-    internal_tap_close();
+
+    
+
+
 
 
 
@@ -667,17 +779,17 @@ void setup() {
 
 
 
-    UBaseType_t iFreeStackNum = 0;
-    while ( 1 == 1 ) {
-        Serial.printf("Number of tasks: %d\n",uxTaskGetNumberOfTasks());
-        iFreeStackNum = uxTaskGetStackHighWaterMark(nfcTask_Handle);
-        Serial.printf("NFC Stack Free: %d\n",iFreeStackNum);
-        iFreeStackNum = uxTaskGetStackHighWaterMark(lvglTask_Handle);
-        Serial.printf("LVGL Stack Free: %d\n",iFreeStackNum);
-        iFreeStackNum = uxTaskGetStackHighWaterMark(controlTask_Handle);
-        Serial.printf("Control Stack Free: %d\n",iFreeStackNum);
-        vTaskDelay(30000/portTICK_PERIOD_MS);
-    }    
+    // UBaseType_t iFreeStackNum = 0;
+    // while ( 1 == 1 ) {
+    //     Serial.printf("Number of tasks: %d\n",uxTaskGetNumberOfTasks());
+    //     iFreeStackNum = uxTaskGetStackHighWaterMark(nfcTask_Handle);
+    //     Serial.printf("NFC Stack Free: %d\n",iFreeStackNum);
+    //     iFreeStackNum = uxTaskGetStackHighWaterMark(lvglTask_Handle);
+    //     Serial.printf("LVGL Stack Free: %d\n",iFreeStackNum);
+    //     iFreeStackNum = uxTaskGetStackHighWaterMark(controlTask_Handle);
+    //     Serial.printf("Control Stack Free: %d\n",iFreeStackNum);
+    //     vTaskDelay(30000/portTICK_PERIOD_MS);
+    // }    
 }
 
 
@@ -736,6 +848,7 @@ void checkNetwork()
 #ifdef DEBUG
             Serial.println("[checkNetwork] Starting WiFi");
 #endif
+            WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
             WiFi.begin(main_shared_tapConfig.getWiFiSSID(),main_shared_tapConfig.getWiFiPWD());
             break;
         case  WL_CONNECTED:
