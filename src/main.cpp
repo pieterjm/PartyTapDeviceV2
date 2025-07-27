@@ -168,8 +168,8 @@ void internal_tap_close() {
     internal_servo_write(main_shared_tapConfig.getServoClose());
 }
 
-void internal_set_message(const char *s) {
-    ui_set_payment_message(s);
+void internal_set_message(const char *s,int delay) {
+    ui_set_payment_message(s, delay);
 }
 
 // This function is triggered by a taskscheduler at the moment an invoice is requested
@@ -179,7 +179,7 @@ void checkInvoiceReceived() {
 #ifdef DEBUG
   Serial.println("[checkInvoiceReceived]");
 #endif  
-    internal_set_message("NO INVOICE RECEIVED");
+    internal_set_message("NO INVOICE RECEIVED",3);
     ui_load_about_screen();
 }
 
@@ -219,6 +219,7 @@ void main_tap_close() {
 
 void ws_lnurlw_withdraw(const char *lnurlw) {
     Serial.println("[ws_lnurlw_withdraw]");
+    internal_set_message("PROCESSING NFC PAYMENT",15);
     String wsmessage = PSTR("{\"event\":\"lnurlw\",\"payment_request\":\""); 
     wsmessage += payment_request;
     wsmessage += PSTR("\",\"lnurlw\":\"");
@@ -293,12 +294,12 @@ void main_nfc_read_success(const uint8_t *buffer,int num) {
     Serial.println("[main_nfc_read_succes]");
 #endif    
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
-        internal_set_message("NFC READ");
+        internal_set_message("NFC READ",4);
 
         // if there is an invoice availble, do the withdraw now, otherwise, requiest an invoice
         if ( payment_request.length() > 0 ) {           
-            // there is a payment request, do the withdraw now             
-            ws_lnurlw_withdraw((const char *)buffer); 
+            // there is a payment request, do the withdraw now                         
+            ws_lnurlw_withdraw((const char *)buffer);             
         } else {
             // there is no payment request, copy the lnurlw
             memcpy(main_shared_lnurlw,buffer,num);
@@ -390,8 +391,8 @@ void updateTapProgress() {
             
             ui_tap_finished();
 
-            main_tap_timeout = 50;
-
+            main_tap_timeout = 3000 / MAIN_TAP_PROGRESS_INTERVAL;
+            
         }
     }
 
@@ -461,14 +462,16 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                         ws_lnurlw_withdraw((const char *)main_shared_lnurlw); 
                         main_shared_lnurlw[0] = '\0';
                         main_shared_lnurlw_len = 0;                     
-                    } 
+                    } else {
+                        ui_hide_payment_message();
+                    }
                     
                     ui_load_payment_screen();
                     ui_display_qrcode(payment_request.c_str(),payment_request.length());
                     
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAID) == 0 ) {
                     tone_paid();
-                    internal_set_message("INVOICE PAID");
+                    internal_set_message("INVOICE PAID",3);
 
 
                     // expiore the invoice
@@ -488,7 +491,7 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     Serial.printf("[ws_event] main_tap_duration = %d\n",main_tap_duration);
 #endif
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAYMENTFAILED) == 0 ) {   
-                    internal_set_message("PAYMENT FAILED");
+                    internal_set_message("PAYMENT FAILED",5);
                     tone_paymentfailed();
                     Serial.println("[ws_event] payment Failed");
                    //tone_paymentfailed();
@@ -528,14 +531,16 @@ void nfc_loop(void *parameters)
             continue;
         }
 
-        ui_set_payment_message("READING NFC");
+        ui_set_payment_message("READING NFC",5);
 
         if ((uidLength != 7) && (uidLength != 4)) {
             Serial.println("uidLength incorrect");
+            ui_set_payment_message("NFC READ ERROR",3);
             continue;
         }   
 
         if (!pn532->ntag424_isNTAG424()) {
+            ui_set_payment_message("NFC READ ERROR",3);
             Serial.println("No NTAG424");
             continue;
         }
@@ -545,18 +550,16 @@ void nfc_loop(void *parameters)
     
         if ( bytesread == 0 ) {
             Serial.println("no bytes read");
+            ui_set_payment_message("NFC READ ERROR",3);
+
             continue;
         }
 
-    
-        if ( bytesread == 0 ) {
-            Serial.println("no bytes read");
-            continue;
-        }
 
 
         if ( strncmp("lnurlw://",(char *)(nfcbuffer),9) != 0 ) {
             Serial.println("this is not an LNURLW");
+            ui_set_payment_message("NFC READ ERROR",3);
             continue;
         }
 

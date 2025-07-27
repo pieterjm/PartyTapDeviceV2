@@ -195,27 +195,36 @@ void ui_update_server_branding(const char *s) {
     }
 }
 
-void internal_set_payment_message(const char *s) {
+void internal_set_payment_message(const char *s,int delay) {
     lv_label_set_text(ui_LabelAboutMessage, s);
     lv_label_set_text(ui_LabelPaymentMessage,s);
     lv_obj_clear_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
-    ui_message_millis = millis();
+    ui_message_millis = millis() + delay * 1000;
 }
 
 // set the message of the payment status on the payment screen
-void ui_set_payment_message(const char *s) {
+void ui_set_payment_message(const char *s,int delay) {
     if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        internal_set_payment_message(s);
+        internal_set_payment_message(s,delay);
         xSemaphoreGive(lvgl_sem);            
     }            
 }
 
 
 void internal_hide_payment_message() {
+    ui_message_millis = 0;
     lv_obj_add_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
 }
+
+void ui_hide_payment_message() {
+    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+        internal_hide_payment_message();
+        xSemaphoreGive(lvgl_sem);            
+    }
+}
+
 
 
 // hide the QR code on the payment screen
@@ -241,16 +250,10 @@ void ui_display_qrcode(const char *s,int len) {
 
 // navigate to the payment screen
 void ui_load_payment_screen() {
-    Serial.println("[ui_load_payment_screen]");
     if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        Serial.println("[ui_load_payment_screen] obtained semaphore");
-        lv_obj_add_flag(ui_PanelPaymentMessage,LV_OBJ_FLAG_HIDDEN);
         lv_disp_load_scr(ui_ScreenPayment);        
         xSemaphoreGive(lvgl_sem);        
-    } else {
-        Serial.println("Failed to obtain semaphore");
     }
-
 }
 
 
@@ -532,7 +535,7 @@ void ui_event_ButtonAboutClicked(lv_event_t * e) {
         bFreeDrink = false;
         lv_disp_load_scr(ui_ScreenTap);
     } else {
-        internal_set_payment_message("CREATING INVOICE");
+        internal_set_payment_message("CREATING INVOICE",15);
         main_get_invoice(product);
     }
 }
@@ -2032,6 +2035,7 @@ void ui_init(void) {
 }
 
 
+
 void ui_loop(void *parameters) {
 
     while ( 1 == 1 ) {        
@@ -2039,8 +2043,7 @@ void ui_loop(void *parameters) {
             lv_task_handler();
             gfx->flush();
 
-            if (( ui_message_millis != 0 ) && ( millis() - ui_message_millis > 3000 )) {
-                ui_message_millis = 0;
+            if (( ui_message_millis != 0 ) && ( millis() > ui_message_millis )) {
                 internal_hide_payment_message();
             }
 
