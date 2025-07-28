@@ -26,6 +26,8 @@ Arduino_GFX *g = new Arduino_AXS15231B(bus, GFX_NOT_DEFINED, 0, false, TFT_res_W
 Arduino_Canvas *gfx = new Arduino_Canvas(TFT_res_W, TFT_res_H, g, 0, 0, TFT_rot);
 AXS15231B_Touch touch(Touch_SCL, Touch_SDA, Touch_INT, Touch_ADDR, TFT_rot);
 
+// Declare the main font
+LV_FONT_DECLARE(ui_font_UbuntuBoldItalic);
 
 // the tap screen
 lv_obj_t * ui_ScreenTap;
@@ -705,7 +707,7 @@ void ui_ScreenTap_screen_init(void) {
     lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION);
     lv_obj_set_style_text_color(ui_LabelTapInstructions, lv_color_hex(BB_BGCOLOR),LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelTapInstructions, 255,LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelTapInstructions, &ui_font_UbuntuBoldItalic,LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelTapInstructions, &ui_font_UbuntuBoldItalic,LV_STATE_ANY);
 
 
     ui_BarTapProgress = lv_bar_create(ui_ScreenTap);
@@ -721,7 +723,7 @@ void ui_ScreenTap_screen_init(void) {
     lv_obj_set_style_border_color(ui_BarTapProgress, lv_color_hex(BB_FGCOLOR),LV_STATE_ANY);
     lv_obj_set_style_border_opa(ui_BarTapProgress, 255,LV_STATE_ANY);
     lv_obj_set_style_border_width(ui_BarTapProgress, 2,LV_STATE_ANY);
-    // lv_obj_set_style_radius(ui_BarTapProgress,0,LV_PART_ANY);
+    //lv_obj_set_style_radius(ui_BarTapProgress,0,LV_PART_ANY);
     
     lv_obj_add_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(ui_BarTapProgress, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
@@ -747,7 +749,7 @@ void ui_ScreenTap_screen_init(void) {
     lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
     lv_obj_set_style_text_color(ui_LabelTapStart, lv_color_hex(BB_BGCOLOR),LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelTapStart, 255,LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelTapStart, &ui_font_UbuntuBoldItalic,LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelTapStart, &ui_font_UbuntuBoldItalic,LV_STATE_ANY);
 
     lv_obj_add_event_cb(ui_ButtonTapStart, ui_event_ButtonTapStartClicked, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(ui_ScreenTap, ui_event_ButtonTapStartClicked, LV_EVENT_CLICKED, NULL);
@@ -784,7 +786,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_label_set_text(ui_LabelAdminHeader, "Administration");
     lv_obj_set_style_text_color(ui_LabelAdminHeader, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAdminHeader, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAdminHeader, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAdminHeader, &ui_font_UbuntuBoldItalic, 0);
 
     ui_LabelAdminVersion = lv_label_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_LabelAdminVersion, LV_SIZE_CONTENT);   /// 1
@@ -855,7 +857,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_label_set_text(ui_LabelAdminOpen, "OPEN");
     lv_obj_set_style_text_color(ui_LabelAdminOpen, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAdminOpen, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAdminOpen, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAdminOpen, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonAdminClose = lv_btn_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_ButtonAdminClose, 145);
@@ -875,7 +877,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_label_set_text(ui_LabelAdminClose, "CLOSE");
     lv_obj_set_style_text_color(ui_LabelAdminClose, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAdminClose, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAdminClose, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAdminClose, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonAdminFree = lv_btn_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_ButtonAdminFree, 300);
@@ -896,7 +898,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_label_set_text(ui_LabelAdminFree, "FREE");
     lv_obj_set_style_text_color(ui_LabelAdminFree, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAdminFree, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAdminFree, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAdminFree, &ui_font_UbuntuBoldItalic, 0);
 
 
     ui_ButtonAdminConfig = lv_btn_create(ui_ScreenAdmin);
@@ -917,7 +919,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_label_set_text(ui_LabelAdminConfig, "CONFIG");
     lv_obj_set_style_text_color(ui_LabelAdminConfig, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAdminConfig, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAdminConfig, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAdminConfig, &ui_font_UbuntuBoldItalic, 0);
 
 
     ui_ButtonAdminCancel = lv_btn_create(ui_ScreenAdmin);
@@ -938,7 +940,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_label_set_text(ui_LabelAdminCancel, "DONE");
     lv_obj_set_style_text_color(ui_LabelAdminCancel, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAdminCancel, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAdminCancel, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAdminCancel, &ui_font_UbuntuBoldItalic, 0);
 
 
     lv_obj_add_event_cb(ui_ButtonAdminConfig, ui_event_ButtonAdminConfigClicked, LV_EVENT_CLICKED, NULL);
@@ -978,7 +980,7 @@ void ui_ScreenPin_screen_init(void)
     lv_obj_set_style_text_letter_space(ui_LabelPinMessage, 10, LV_STATE_ANY);
     lv_obj_set_style_text_line_space(ui_LabelPinMessage, 0, LV_STATE_ANY);
     lv_obj_set_style_text_align(ui_LabelPinMessage, LV_TEXT_ALIGN_LEFT, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPinMessage, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPinMessage, &ui_font_UbuntuBoldItalic, 0);
 
 
     ui_LabelPinHeader = lv_label_create(ui_PanelPinHeader);
@@ -988,7 +990,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPinHeader, "ENTER PIN");
     lv_obj_set_style_text_color(ui_LabelPinHeader, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPinHeader, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPinPanel, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPinHeader, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin1 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin1, 80);
@@ -1008,7 +1010,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin1, "1");
     lv_obj_set_style_text_color(ui_LabelPin1, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin1, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin1, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin1, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin2 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin2, 80);
@@ -1028,7 +1030,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin2, "2");
     lv_obj_set_style_text_color(ui_LabelPin2, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin2, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin2, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin2, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin3 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin3, 80);
@@ -1048,7 +1050,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin3, "3");
     lv_obj_set_style_text_color(ui_LabelPin3, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin3, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin3, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin3, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin4 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin4, 80);
@@ -1068,7 +1070,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin4, "4");
     lv_obj_set_style_text_color(ui_LabelPin4, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin4, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin4, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin4, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin5 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin5, 80);
@@ -1088,7 +1090,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin5, "5");
     lv_obj_set_style_text_color(ui_LabelPin5, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin5, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin5, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin5, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin6 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin6, 80);
@@ -1108,7 +1110,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin6, "6");
     lv_obj_set_style_text_color(ui_LabelPin6, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin6, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin6, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin6, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin7 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin7, 80);
@@ -1128,7 +1130,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin7, "7");
     lv_obj_set_style_text_color(ui_LabelPin7, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin7, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin7, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin7, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin8 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin8, 80);
@@ -1148,7 +1150,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin8, "8");
     lv_obj_set_style_text_color(ui_LabelPin8, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin8, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin8, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin8, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin9 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin9, 80);
@@ -1168,7 +1170,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin9, "9");
     lv_obj_set_style_text_color(ui_LabelPin9, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin9, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin9, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin9, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPinCancel = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPinCancel, 80);
@@ -1188,7 +1190,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPINCancel, "C");
     lv_obj_set_style_text_color(ui_LabelPINCancel, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPINCancel, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPINCancel, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPINCancel, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPin0 = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPin0, 80);
@@ -1208,7 +1210,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPin0, "0");
     lv_obj_set_style_text_color(ui_LabelPin0, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPin0, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPin0, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPin0, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPinOK = lv_btn_create(ui_ScreenPin);
     lv_obj_set_width(ui_ButtonPinOK, 80);
@@ -1228,7 +1230,7 @@ void ui_ScreenPin_screen_init(void)
     lv_label_set_text(ui_LabelPinOK, "OK");
     lv_obj_set_style_text_color(ui_LabelPinOK, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPinOK, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPinOK, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPinOK, &ui_font_UbuntuBoldItalic, 0);
 
 
     lv_obj_add_event_cb(ui_ButtonPin0, ui_event_ButtonPinNumberClicked, LV_EVENT_CLICKED, (void *)0);
@@ -1269,12 +1271,16 @@ void ui_ScreenAbout_screen_init(void)
     lv_label_set_text(ui_LabelAboutHeader, BB_NAME);
     lv_obj_set_style_text_color(ui_LabelAboutHeader, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAboutHeader, 255, LV_STATE_ANY);
-//    lv_obj_set_style_text_font(ui_LabelAboutHeader, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAboutHeader, &ui_font_UbuntuBoldItalic, 0);
 
-
-    LV_IMG_DECLARE(kanhetal256);
     ui_ImageAbout = lv_img_create(ui_ScreenAbout);
+#ifdef BRANDING_BITCOIN_FRIESLAND
+    LV_IMG_DECLARE(Bitcoin_Friesland);
+    lv_img_set_src(ui_ImageAbout, &Bitcoin_Friesland); 
+#else
+    LV_IMG_DECLARE(kanhetal256);
     lv_img_set_src(ui_ImageAbout, &kanhetal256); 
+#endif
 
     lv_obj_set_width(ui_ImageAbout, LV_SIZE_CONTENT);   /// 256
     lv_obj_set_height(ui_ImageAbout, LV_SIZE_CONTENT);    /// 256
@@ -1313,7 +1319,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_label_set_text(ui_LabelAboutOne, "");
     lv_obj_set_style_text_color(ui_LabelAboutOne, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAboutOne, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAboutOne, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAboutOne, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonAboutTwo = lv_btn_create(ui_ScreenAbout);
     lv_obj_set_width(ui_ButtonAboutTwo, 100);
@@ -1334,7 +1340,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_label_set_text(ui_LabelAboutTwo, "");
     lv_obj_set_style_text_color(ui_LabelAboutTwo, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAboutTwo, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAboutTwo, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAboutTwo, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonAboutThree = lv_btn_create(ui_ScreenAbout);
     lv_obj_set_width(ui_ButtonAboutThree, 100);
@@ -1355,7 +1361,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_label_set_text(ui_LabelAboutThree, "");
     lv_obj_set_style_text_color(ui_LabelAboutThree, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAboutThree, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAboutThree, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAboutThree, &ui_font_UbuntuBoldItalic, 0);
 
 
     ui_PanelAboutMessage = lv_obj_create(ui_ScreenAbout);
@@ -1376,7 +1382,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_label_set_text(ui_LabelAboutMessage, "CREATING INVOICE");
     lv_obj_set_style_text_color(ui_LabelAboutMessage, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelAboutMessage, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelAboutMessage, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelAboutMessage, &ui_font_UbuntuBoldItalic, 0);
 
 
     lv_obj_add_event_cb(ui_PanelAboutHeader, ui_event_PanelAboutHeaderClicked, LV_EVENT_CLICKED, NULL);
@@ -1412,7 +1418,7 @@ void ui_ScreenPayment_screen_init(void)
     lv_label_set_text(ui_LabelPaymentHeader, "PAY FOR YOUR DRINK");
     lv_obj_set_style_text_color(ui_LabelPaymentHeader, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPaymentHeader, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPaymentHeader, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPaymentHeader, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPaymentCancel = lv_btn_create(ui_ScreenPayment);
     lv_obj_set_width(ui_ButtonPaymentCancel, 120);
@@ -1432,7 +1438,7 @@ void ui_ScreenPayment_screen_init(void)
     lv_label_set_text(ui_LabelPaymentCancel, "CANCEL");
     lv_obj_set_style_text_color(ui_LabelPaymentCancel, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPaymentCancel, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPaymentCancel, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPaymentCancel, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPaymentEnterPin = lv_btn_create(ui_ScreenPayment);
     lv_obj_set_width(ui_ButtonPaymentEnterPin, 120);
@@ -1453,7 +1459,7 @@ void ui_ScreenPayment_screen_init(void)
     lv_label_set_text(ui_LabelPaymentEnterPin, "ENTER PIN");
     lv_obj_set_style_text_color(ui_LabelPaymentEnterPin, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPaymentEnterPin, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPaymentEnterPin, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPaymentEnterPin, &ui_font_UbuntuBoldItalic, 0);
 
     // initialize the QR code
     lv_color_t bg_color = lv_color_hex(0xFFFFFF);
@@ -1487,7 +1493,7 @@ void ui_ScreenPayment_screen_init(void)
     lv_label_set_text(ui_LabelPaymentMessage, "THIS IS A TEST");
     lv_obj_set_style_text_color(ui_LabelPaymentMessage, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPaymentMessage, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelPaymentMessage, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelPaymentMessage, &ui_font_UbuntuBoldItalic, 0);
 
     lv_obj_add_event_cb(ui_ButtonPaymentEnterPin,ui_event_ButtonPaymentEnterPinClicked, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(ui_ButtonPaymentCancel, ui_event_ButtonPaymentCancelClicked, LV_EVENT_CLICKED, NULL);
@@ -1624,7 +1630,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigPIN, "PIN");
     lv_obj_set_style_text_color(ui_LabelConfigPIN, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigPIN, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigPIN, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigPIN, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonConfigServoClose = lv_btn_create(ui_ScreenConfig);
     lv_obj_set_width(ui_ButtonConfigServoClose, 95);
@@ -1644,7 +1650,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigServoClose, "CLOSE");
     lv_obj_set_style_text_color(ui_LabelConfigServoClose, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigServoClose, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigServoClose, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigServoClose, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonConfigServoOpen = lv_btn_create(ui_ScreenConfig);
     lv_obj_set_width(ui_ButtonConfigServoOpen, 95);
@@ -1664,7 +1670,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigServoOpen, "OPEN");
     lv_obj_set_style_text_color(ui_LabelConfigServoOpen, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigServoOpen, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigServoOpen, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigServoOpen, &ui_font_UbuntuBoldItalic, 0);
 
     ui_LabelConfigPaymentMode = lv_label_create(ui_ScreenConfig);
     lv_obj_set_width(ui_LabelConfigPaymentMode, LV_SIZE_CONTENT);   /// 1
@@ -1725,7 +1731,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigDone, "SAVE");
     lv_obj_set_style_text_color(ui_LabelConfigDone, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigDone, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigDone, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigDone, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonConfigCancel = lv_btn_create(ui_ScreenConfig);
     lv_obj_set_width(ui_ButtonConfigCancel, 95);
@@ -1745,7 +1751,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigCancel, "CANCEL");
     lv_obj_set_style_text_color(ui_LabelConfigCancel, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigCancel, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigCancel, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigCancel, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonConfigUpdate = lv_btn_create(ui_ScreenConfig);
     lv_obj_set_width(ui_ButtonConfigUpdate, 95);
@@ -1767,7 +1773,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigUpdate, "UPDATE");
     lv_obj_set_style_text_color(ui_LabelConfigUpdate, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigUpdate, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigUpdate, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigUpdate, &ui_font_UbuntuBoldItalic, 0);
 
     ui_PanelConfigPIN = lv_obj_create(ui_ScreenConfig);
     lv_obj_set_width(ui_PanelConfigPIN, 256);
@@ -1859,7 +1865,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigButtonPINOK, "OK");
     lv_obj_set_style_text_color(ui_LabelConfigButtonPINOK, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigButtonPINOK, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigButtonPINOK, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigButtonPINOK, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonConfigPINCancel = lv_btn_create(ui_PanelConfigPIN);
     lv_obj_set_width(ui_ButtonConfigPINCancel, 100);
@@ -1877,7 +1883,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigButtonPINCancel, "CANCEL");
     lv_obj_set_style_text_color(ui_LabelConfigButtonPINCancel, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigButtonPINCancel, 255, LV_STATE_ANY);
-    // lv_obj_set_style_text_font(ui_LabelConfigButtonPINCancel, &ui_font_UbuntuBoldItalic, LV_STATE_ANY);
+    lv_obj_set_style_text_font(ui_LabelConfigButtonPINCancel, &ui_font_UbuntuBoldItalic, 0);
 
     ui_LabelConfigPINMessage = lv_label_create(ui_PanelConfigPIN);
     lv_obj_set_width(ui_LabelConfigPINMessage, LV_SIZE_CONTENT);   /// 1

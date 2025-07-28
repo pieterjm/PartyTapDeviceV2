@@ -714,17 +714,11 @@ void setup() {
     main_shared_tapConfig.load();
 
 
+    main_servo = new Servo();
+    main_servo->attach(5);
 
-
-
-
-    // main_shared_tapConfig.setWiFiSSID("BitcoinTaps");
-    // main_shared_tapConfig.setWiFiPWD("aqlvoqfy");
-    // main_shared_tapConfig.setLNbitsHost("lnbits.meulenhoff.org");
-    // main_shared_tapConfig.setDeviceID("hi88u3mh");
-//    main_shared_tapConfig.setServoClose(90);
-//    main_shared_tapConfig.setServoOpen(90);
-
+    internal_tap_close();
+    
     control_sem = xSemaphoreCreateMutex();
 
     
@@ -745,26 +739,7 @@ void setup() {
       }
 
 
-    // ESP32PWM::allocateTimer(0);
-    // ESP32PWM::allocateTimer(1);
-    // ESP32PWM::allocateTimer(2);
-    // ESP32PWM::allocateTimer(3);
-
-
-
-    main_servo = new Servo();
-    main_servo->attach(5);
-
-    
-
-
-
-
-
     nfc_init();
-
-      // TODO create a separate task for the network
-
 
     if ( xTaskCreatePinnedToCore (
         main_loop,     // Function to implement the task
