@@ -18,7 +18,7 @@ void main_tap_resume();
 
 void main_tap_pause();
 
-void main_firmware_update();
+bool main_firmware_update();
 
 void main_servo_write(int i);
 

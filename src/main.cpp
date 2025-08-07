@@ -19,6 +19,7 @@
 #include "pingwav.h"
 #include "levelup.h"
 #include "FreeRTOS.h"
+#include <HTTPUpdate.h>
 
 
 
@@ -47,6 +48,7 @@ String payment_pin = "";
 String config_wspath = "";
 uint8_t main_shared_lnurlw[512];
 int main_shared_lnurlw_len = 0;
+bool bDoFirmwareUpdate = false;
 
 ProductConfig productConfig;
 TapConfig main_shared_tapConfig;
@@ -82,11 +84,13 @@ void reportState();
 void updateTapProgress();
 void expireInvoice();
 void checkInvoiceReceived();
+void firmwareUpdate();
 Task checkNetworkTask(5 * TASK_SECOND, TASK_FOREVER,&checkNetwork);
 Task reportStateTask(2 * TASK_SECOND, TASK_FOREVER,&reportState);
 Task tapProgressTask(TASK_IMMEDIATE, TASK_FOREVER, &updateTapProgress);
 Task expireInvoiceTask(TASK_IMMEDIATE,TASK_ONCE,&expireInvoice);
 Task checkInvoiceReceivedTask(TASK_IMMEDIATE, TASK_ONCE,&checkInvoiceReceived);
+Task firmwareUpdateTask(TASK_SECOND, TASK_FOREVER, &firmwareUpdate);
 
 Servo *main_servo;
 Servo *tone_servo;
@@ -185,9 +189,11 @@ void checkInvoiceReceived() {
 
 // write to servo
 void main_servo_write(int i) {
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
         internal_servo_write(i);
         xSemaphoreGive(control_sem);        
+    } else {
+        Serial.println("Did not get semaphore at main_servo_write");        
     }
 }
 
@@ -195,9 +201,11 @@ void main_tap_open() {
 #ifdef DEBUG
     Serial.println("[main_tap_open]");
 #endif
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
         internal_tap_open();
         xSemaphoreGive(control_sem);        
+    } else {
+        Serial.println("Did not get semaphore at main_tap_open");        
     }
 }
 
@@ -207,9 +215,11 @@ void main_tap_close() {
 #ifdef DEBUG
     Serial.println("[main_tap_close]");
 #endif
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
         internal_tap_close();
         xSemaphoreGive(control_sem);        
+    } else {
+        Serial.println("Did not get semaphore at main_tap_close");        
     }
 
 }
@@ -229,9 +239,110 @@ void ws_lnurlw_withdraw(const char *lnurlw) {
 }
 
 // firmware update
-void main_firmware_update() {
-    Serial.println("[main_firmware_update] Not implemented");
+bool main_firmware_update() {
+    Serial.println("[main_firmware_update]");
+
+    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
+        Serial.println("[main_firmware_update] setting bDoFirmwareUpdate to true");
+        bDoFirmwareUpdate = true;
+        firmwareUpdateTask.restartDelayed(2000);
+        xSemaphoreGive(control_sem);        
+        return true;
+    }  else {
+        Serial.println("[main_firmware_update] failed to obtain semaphore");
+        return false;
+    }
 }
+
+void firmwareUpdateFinished() {
+    ui_set_payment_message("RESTARTING",20000);
+}
+
+void firmwareUpdateProgress(int cur, int total) {
+  static char message[25];
+  snprintf_P(message, sizeof(message), PSTR("UPDATE PROGRESS %d%%"), 100 * cur / total);
+  ui_set_payment_message(message,10000);
+  Serial.println(message);
+}
+
+void firmwareUpdateError(int err) {
+    Serial.printf("firmwareUpdateError %d\n",err);
+    switch (err ) {
+      case HTTP_UE_NO_PARTITION:
+        ui_set_payment_message("NO PARTITION",10000);
+        break;
+      case HTTP_UE_BIN_FOR_WRONG_FLASH:
+        ui_set_payment_message("WRONG FLASH",10000);
+        break;
+      case HTTP_UE_BIN_VERIFY_HEADER_FAILED:
+        ui_set_payment_message("VERIFY FAILED",10000);
+        break;
+      case HTTP_UE_SERVER_FAULTY_MD5:
+        ui_set_payment_message("HASH ERROR",10000);
+        break;
+      case HTTP_UE_SERVER_WRONG_HTTP_CODE:
+        ui_set_payment_message("BAD SERVER RESPONSE",10000);      
+        break;
+      case HTTP_UE_SERVER_FORBIDDEN:
+        ui_set_payment_message("NOT ALLOWED",10000);
+        break;
+      case HTTP_UE_SERVER_FILE_NOT_FOUND:
+        ui_set_payment_message("FILE NOT FOUND",10000);
+        break;
+      case HTTP_UE_SERVER_NOT_REPORT_SIZE:
+        ui_set_payment_message("SIZE NOT REPORTED",10000);
+        break;
+      case HTTP_UE_TOO_LESS_SPACE:
+        ui_set_payment_message("NOT ENOUGH SPACE",10000);
+        break;
+      default:
+        break;
+    }
+}
+
+
+void firmwareUpdate() {
+    Serial.println("[firmwareUpdate]");
+    static char firmware_path[200];    
+    if ( ! bDoFirmwareUpdate ) {
+        return;
+    }
+    bDoFirmwareUpdate = false;
+    
+    Serial.println("[firmwareUpdate] after checks");
+    checkNetworkTask.disable();
+    reportStateTask.disable();
+    webSocket.disableHeartbeat();
+    webSocket.disconnect();
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(12000);
+
+
+    httpUpdate.onEnd(firmwareUpdateFinished);
+    httpUpdate.onProgress(firmwareUpdateProgress);
+    httpUpdate.onError(firmwareUpdateError);
+    httpUpdate.rebootOnUpdate(true);
+
+#define FIRMWARE_HOST "firmware.bitcointaps.com"
+  snprintf_P(firmware_path, sizeof(firmware_path), PSTR("/partytap/latest/JC3248W535EN/firmware_%s.bin"), productConfig.getServerBranding());
+#ifdef DEBUG
+  Serial.printf("[doFirmwareUpdate] Firmware path %s\n",firmware_path);
+#endif
+  t_httpUpdate_return ret = httpUpdate.update(client, FIRMWARE_HOST, 443, firmware_path);
+  
+  if ( ret == HTTP_UPDATE_FAILED ) {
+#ifdef DEBUG
+    Serial.printf("HTTP_UPDATE_FAILED Error (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+#endif
+    firmwareUpdateError(httpUpdate.getLastError());
+    delay(10000);
+    ESP.restart();
+    return;
+  }
+}
+
 
 
 
@@ -242,9 +353,11 @@ bool main_verify_pin(String entered_pin) {
 #endif    
     String pin = "";
     
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
         pin = main_shared_tapConfig.getPIN();
         xSemaphoreGive(control_sem);        
+    } else {
+        return false;
     }
 
     if (( pin.length() == 6 )&&(entered_pin.length() == 6)&&(pin.equals(entered_pin))) {
@@ -607,6 +720,7 @@ void main_loop(void *parameters) {
     taskScheduler.addTask(reportStateTask);
     taskScheduler.addTask(tapProgressTask);
     taskScheduler.addTask(expireInvoiceTask);
+    taskScheduler.addTask(firmwareUpdateTask);
 
     tapProgressTask.setInterval(MAIN_TAP_PROGRESS_INTERVAL);
     tapProgressTask.enable();

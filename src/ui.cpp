@@ -424,16 +424,27 @@ void ui_load_about_screen() {
 
 // Close button on the config screen clicked
 void ui_event_button_config_servo_close_clicked(lv_event_t *e) {
-    main_servo_write(atoi(lv_textarea_get_text(ui_TextAreaConfigServoClosed)));
+    int value = atoi(lv_textarea_get_text(ui_TextAreaConfigServoClosed));
+    main_servo_write(value);
 }
 
 // Open button on the config screen clicked
 void ui_event_button_config_servo_open_clicked(lv_event_t *e) {
-    main_servo_write(atoi(lv_textarea_get_text(ui_TextAreaConfigServoOpen)));
+    int value = atoi(lv_textarea_get_text(ui_TextAreaConfigServoOpen));
+    main_servo_write(value);
 }
 
 // update button clicked
 void ui_event_button_config_update_clicked(lv_event_t * e) {
+    lv_disp_load_scr(ui_ScreenAbout);        
+    lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_PanelAboutHeader,LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(ui_LabelAboutMessage,"UPDATING FIRMWARE");
+    lv_obj_clear_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_y(ui_PanelAboutMessage,150);
+
     main_firmware_update();
 }
 
@@ -1763,9 +1774,8 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_clear_flag(ui_ButtonConfigUpdate, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_bg_color(ui_ButtonConfigUpdate, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_bg_opa(ui_ButtonConfigUpdate, 255, LV_STATE_ANY);
-    lv_obj_add_flag(ui_ButtonConfigUpdate,LV_OBJ_FLAG_HIDDEN); // Hide the Update button for the moment
-    lv_obj_add_flag(ui_ButtonConfigUpdate,LV_OBJ_FLAG_HIDDEN);
-
+    //lv_obj_add_flag(ui_ButtonConfigUpdate,LV_OBJ_FLAG_HIDDEN); // Hide the Update button for the moment
+    
     ui_LabelConfigUpdate = lv_label_create(ui_ButtonConfigUpdate);
     lv_obj_set_width(ui_LabelConfigUpdate, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_LabelConfigUpdate, LV_SIZE_CONTENT);    /// 1
