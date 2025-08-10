@@ -9,7 +9,6 @@
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <TaskScheduler.h>
-#include <ESP32Servo.h>
 #include "ui.h"
 #include "bitcointap.h"
 #include "productconfig.h"
@@ -52,12 +51,6 @@ bool bDoFirmwareUpdate = false;
 
 ProductConfig productConfig;
 TapConfig main_shared_tapConfig;
-int main_tap_duration = 0;
-bool main_shared_tap_running = false;
-
-
-int main_tap_timeout = 0;   // the timeout after a drink is served
-int main_tap_remaining_credit = 0;  // the amount of credit available for tapping
 
 #define SENSACT_NFC_CB_UNAVAILABLE  0
 #define SENSACT_NFC_CB_NOREAD       1
@@ -81,19 +74,17 @@ void ws_request_invoice(String switchid);
 
 void checkNetwork();
 void reportState();
-void updateTapProgress();
+// void updateTapProgress();
 void expireInvoice();
 void checkInvoiceReceived();
 void firmwareUpdate();
 Task checkNetworkTask(5 * TASK_SECOND, TASK_FOREVER,&checkNetwork);
 Task reportStateTask(2 * TASK_SECOND, TASK_FOREVER,&reportState);
-Task tapProgressTask(TASK_IMMEDIATE, TASK_FOREVER, &updateTapProgress);
+// Task tapProgressTask(TASK_IMMEDIATE, TASK_FOREVER, &updateTapProgress);
 Task expireInvoiceTask(TASK_IMMEDIATE,TASK_ONCE,&expireInvoice);
 Task checkInvoiceReceivedTask(TASK_IMMEDIATE, TASK_ONCE,&checkInvoiceReceived);
 Task firmwareUpdateTask(TASK_SECOND, TASK_FOREVER, &firmwareUpdate);
 
-Servo *main_servo;
-Servo *tone_servo;
 
 // static QueueHandle_t msgQueue;
 
@@ -152,26 +143,6 @@ void tone_paymentfailed() {
 }
 
 
-
-
-// servo functions
-
-void internal_servo_write(int i) {
-#ifdef DEBUG
-    Serial.printf("[internal_servo_write] i = %d\n",i);    
-#endif
-    main_servo->write(i);
-}
-
-void internal_tap_open() {
-    internal_servo_write(main_shared_tapConfig.getServoOpen());
-}
-
-
-void internal_tap_close() {
-    internal_servo_write(main_shared_tapConfig.getServoClose());
-}
-
 void internal_set_message(const char *s,int delay) {
     ui_set_payment_message(s, delay);
 }
@@ -187,44 +158,7 @@ void checkInvoiceReceived() {
     ui_load_about_screen();
 }
 
-// write to servo
-void main_servo_write(int i) {
-    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
-        internal_servo_write(i);
-        xSemaphoreGive(control_sem);        
-    } else {
-        Serial.println("Did not get semaphore at main_servo_write");        
-    }
-}
 
-void main_tap_open() {
-#ifdef DEBUG
-    Serial.println("[main_tap_open]");
-#endif
-    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
-        internal_tap_open();
-        xSemaphoreGive(control_sem);        
-    } else {
-        Serial.println("Did not get semaphore at main_tap_open");        
-    }
-}
-
-
-// external 
-void main_tap_close() {
-#ifdef DEBUG
-    Serial.println("[main_tap_close]");
-#endif
-    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
-        internal_tap_close();
-        xSemaphoreGive(control_sem);        
-    } else {
-        Serial.println("Did not get semaphore at main_tap_close");        
-    }
-
-}
-
-// websocket functions
 
 
 void ws_lnurlw_withdraw(const char *lnurlw) {
@@ -428,90 +362,6 @@ void main_nfc_read_success(const uint8_t *buffer,int num) {
 
 
 
-
-// open the tap
-// called from UI thread, so lock before accessing variables
-void main_tap_resume() {
-    Serial.println("[main_tap_resume]");
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
-        main_shared_tap_running = true;
-        internal_tap_open();
-        xSemaphoreGive(control_sem);        
-    }
-}
-
-// close the tap
-// called from UI thread, so lock before accessing variables
-void main_tap_pause() {
-    Serial.println("[main_tap_pause]");
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
-        main_shared_tap_running = false;
-        internal_tap_close();
-        xSemaphoreGive(control_sem);        
-    }
-}
-
-// Tap progress
-// running in the main loop process, do not lock here
-void updateTapProgress() {
-#ifdef DEBUG
-    //Serial.println("[updateTapProgress]");
-#endif
-
-
-    if ( main_tap_remaining_credit <= 0 ) {
-        main_tap_timeout--;
-        if ( main_tap_timeout <= 0 ) {
-            if ( ui_tap_screen_active() ) {
-                ui_load_about_screen();
-            }
-        }
-        return;
-    }
-
-
-
-
-#ifdef DEBUG
-    Serial.printf("[updateTapProgress] tap credit = %d, timeout = %d\n",main_tap_remaining_credit,main_tap_timeout);
-#endif
-
-
-    // we have credit, load the tap screen if not loaded
-    if ( ! ui_tap_screen_active() ) {
-        main_shared_tap_running = false;
-        ui_tap_load_screen();
-    }
-
-    // if tapcontrols not visible, make them visible
-    if ( ! ui_tap_controls_visible() ) {
-        main_shared_tap_running = false;
-        ui_tap_show_controls();
-    }
-
-    ui_set_tap_bar_value(main_tap_remaining_credit);
-
-    // if the tap is running
-    if ( main_shared_tap_running  ) {
-        main_tap_remaining_credit--;
-        ui_set_tap_bar_value(main_tap_remaining_credit);
-    
-        if ( main_tap_remaining_credit <= 0 ) {
-#ifdef DEBUG
-            Serial.printf("[updateTapProgress] No credit remaining\n");
-#endif
-            internal_tap_close();
-            
-            ui_tap_finished();
-
-            main_tap_timeout = 3000 / MAIN_TAP_PROGRESS_INTERVAL;
-            
-        }
-    }
-
-
-}
-
 // send a websocket event to request an invoice
 // running in the main loop, do not lock here
 void ws_request_invoice(String switchid) {
@@ -523,7 +373,11 @@ void ws_request_invoice(String switchid) {
     String wsmessage = PSTR("{\"event\":\"createinvoice\",\"switch_id\":\"");
     wsmessage +=  switchid;
     wsmessage += PSTR("\"}");
-    webSocket.sendTXT(wsmessage); 
+    if ( webSocket.sendTXT(wsmessage) ) {
+        Serial.println("Websocket send succes");
+    } else {
+        Serial.println("Websocket send failure");
+    }
 }
 
 // handle a websocket event
@@ -554,6 +408,9 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
 
                     productConfig.parse(&doc);
                     productConfig.save();
+
+                    internal_set_message("CONNECTED",1);
+
 
                     // configure switches in the UI
                     const char *labels[PARTYTAP_CFG_MAX_PRODUCTS];
@@ -596,13 +453,8 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     payment_hash = "";
                     payment_request = "";
                     
-                    main_tap_duration = doc["payload"].as<int>();
-                    main_tap_remaining_credit += ( main_tap_duration / MAIN_TAP_PROGRESS_INTERVAL);
-                    // set the maximum value of the bar, when a tap is running, increase
-                    ui_set_tap_bar_max(main_tap_remaining_credit);
-#ifdef DEBUG
-                    Serial.printf("[ws_event] main_tap_duration = %d\n",main_tap_duration);
-#endif
+                    int tap_credit = doc["payload"].as<int>();
+                    ui_add_tap_credit(tap_credit);
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAYMENTFAILED) == 0 ) {   
                     internal_set_message("PAYMENT FAILED",5);
                     tone_paymentfailed();
@@ -718,12 +570,9 @@ void main_loop(void *parameters) {
 
     taskScheduler.addTask(checkNetworkTask);
     taskScheduler.addTask(reportStateTask);
-    taskScheduler.addTask(tapProgressTask);
     taskScheduler.addTask(expireInvoiceTask);
     taskScheduler.addTask(firmwareUpdateTask);
 
-    tapProgressTask.setInterval(MAIN_TAP_PROGRESS_INTERVAL);
-    tapProgressTask.enable();
     reportStateTask.enable();
 
 
@@ -827,11 +676,7 @@ void setup() {
     LittleFS.begin(true);
     main_shared_tapConfig.load();
 
-
-    main_servo = new Servo();
-    main_servo->attach(5);
-
-    internal_tap_close();
+    //TODO: Share tap config with UI thread
     
     control_sem = xSemaphoreCreateMutex();
 
@@ -887,12 +732,12 @@ void setup() {
 
 // report state to the GUI process
 void reportState() {    
-#ifdef DEBUG
-    Serial.println("[reportState]");
-#endif
     if ( ! ui_admin_screen_active() ) {
         return;
     }
+#ifdef DEBUG
+    Serial.println("[reportState]");
+#endif
 
 
     int wifiState = WiFi.status();
@@ -936,6 +781,8 @@ void checkNetwork()
     Serial.println("[checkNetwork]");
 #endif
     switch ( WiFi.status() ) {
+        case WL_IDLE_STATUS:
+            internal_set_message("WIFI NOT CONNECTED",5);        
         case WL_STOPPED:
 #ifdef DEBUG
             Serial.println("[checkNetwork] Starting WiFi");
@@ -944,14 +791,23 @@ void checkNetwork()
             WiFi.begin(main_shared_tapConfig.getWiFiSSID(),main_shared_tapConfig.getWiFiPWD());
             break;
         case  WL_CONNECTED:
+            Serial.println("WL_CONNECTED");
             if ( ! webSocket.isConnected() ) {
-#ifdef DEBUG
-                Serial.println("[checkNetwork] Starting WebSocket");
-#endif
+                Serial.println("WEBSOCKET NOT CONNECTED");
+
+                internal_set_message("NOT CONNECTED",3);
+                ui_hide_payment_buttons();
+
                 config_wspath = "/partytap/api/v1/ws/";
                 config_wspath += main_shared_tapConfig.getDeviceID();                
+#ifdef DEBUG
+                Serial.printf("[checkNetwork] Starting WebSocket to: %s\n",config_wspath.c_str());
+#endif
                 webSocket.disconnect();
+                webSocket.enableHeartbeat(5000,2000,1);
                 webSocket.beginSSL(main_shared_tapConfig.getLNbitsHost(),443, config_wspath);                
+            } else {
+                Serial.println("WEBSOCKET CONNECTED");
             }
             break;
         case WL_DISCONNECTED:
@@ -960,7 +816,10 @@ void checkNetwork()
 #endif
             WiFi.begin(main_shared_tapConfig.getWiFiSSID(),main_shared_tapConfig.getWiFiPWD());            
             break;
+            
         default:
+            Serial.printf("WIFI STATUS: %d\n",WiFi.status());
+
             break;
     }
 

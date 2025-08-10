@@ -6,6 +6,7 @@
 #include <Arduino_GFX_Library.h>
 #include "ui.h"
 #include "bitcointap.h"
+#include <ESP32Servo.h>
 
 static SemaphoreHandle_t lvgl_sem;
 TapConfig ui_tapConfig;
@@ -13,12 +14,20 @@ String ui_PinEnteredPin = ""; // The actual entered PIN on the PIN Screen
 String ui_PinHidePin = ""; // a string of stars displayed on the screen
 unsigned long ui_message_millis = 0; // millis when a message has been set
 bool bFreeDrink = false;
+Servo *ui_servo;
+bool ui_tap_running = false; 
+int ui_tap_remaining_credit = 0;
+int ui_tap_timeout = 0;
+unsigned long previousRunTime;
 
 #define UI_BUTTON_TAP_TAP "PRESS TO START"
 #define UI_BUTTON_TAP_PAUSE "PRESS TO PAUSE"
 #define UI_BUTTON_TAP_RESUME "PRESS TO RESUME"
 #define UI_LABEL_TAP_FINISHED "ENJOY YOUR DRINK!"
 #define UI_LABEL_TAP_INSTRUCTION "TILT GLASS SLIGHTLY"
+#define UI_TAP_PROGRESS_INTERVAL 200
+
+#define runEvery(t) for (static uint16_t _lasttime; millis() - _lasttime >= (t); _lasttime += (t)) 
 
 //
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(TFT_CS, TFT_SCK, TFT_SDA0, TFT_SDA1, TFT_SDA2, TFT_SDA3);
@@ -162,8 +171,111 @@ lv_obj_t *ui_KeyboardConfig;
 
 #define BB_FGCOLOR 0xFFFFFF
 #define BB_BGCOLOR 0x4E4D4D
-#define BB_NAME "BitcoinTaps"
+#define BB_NAME "Why Drink? Why Not!"
 #define FIRMWARE_VERSION "test"
+
+void internal_servo_write(int i) {
+#ifdef DEBUG
+    Serial.printf("[internal_servo_write] i = %d\n",i);    
+#endif
+    ui_servo->write(i);
+}
+
+void internal_tap_open() {
+    internal_servo_write(ui_tapConfig.getServoOpen());
+}
+
+void internal_tap_close() {
+    internal_servo_write(ui_tapConfig.getServoClose());
+}
+
+// close the tap
+// called from UI thread, so lock before accessing variables
+void internal_tap_pause() {
+    Serial.println("[internal_tap_pause]");
+    ui_tap_running = false;
+    internal_tap_close();
+}
+
+// open the tap
+// called from UI thread, so lock before accessing variables
+void internal_tap_resume() {
+    Serial.println("[internal_tap_resume]");
+    ui_tap_running = true;
+    internal_tap_open();
+}
+
+// Tap progress
+// running in the main loop process, do not lock here
+void internal_update_tapprogress() {
+    // Serial.printf("[updateTapProgress]  %d %d\n",ui_tap_remaining_credit,ui_tap_timeout);
+
+
+    if ( ui_tap_remaining_credit <= 0 ) {
+        ui_tap_remaining_credit = 0;
+        if ( ui_tap_timeout <= 0 ) {
+            if (ui_ScreenTap == lv_screen_active()) {
+                lv_disp_load_scr(ui_ScreenAbout);        
+            }
+            return;
+        }
+        ui_tap_timeout--;
+        return;
+    }
+
+
+
+
+    //Serial.printf("[updateTapProgress] tap credit = %d, timeout = %d\n",ui_tap_remaining_credit,ui_tap_timeout);
+
+
+    // we have credit, load the tap screen if not loaded
+    if ( ui_ScreenTap != lv_screen_active() ) {
+        ui_tap_running = false;
+        lv_label_set_text(ui_LabelTapInstructions,UI_LABEL_TAP_INSTRUCTION);
+        lv_label_set_text(ui_LabelTapStart,UI_BUTTON_TAP_TAP);
+        lv_obj_clear_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(ui_ButtonTapStart,LV_OBJ_FLAG_HIDDEN);
+        lv_disp_load_scr(ui_ScreenTap);        
+    } else if (!(lv_obj_is_visible(ui_BarTapProgress)&&lv_obj_is_visible(ui_ButtonTapStart))) {
+        ui_tap_running = false;
+        lv_label_set_text(ui_LabelTapInstructions,UI_LABEL_TAP_INSTRUCTION);
+        lv_label_set_text(ui_LabelTapStart,UI_BUTTON_TAP_TAP);
+        lv_obj_clear_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(ui_ButtonTapStart,LV_OBJ_FLAG_HIDDEN);
+    }
+
+    lv_bar_set_value(ui_BarTapProgress,ui_tap_remaining_credit,LV_ANIM_OFF);
+    
+    // if the tap is running
+    if ( ui_tap_running  ) {
+        ui_tap_remaining_credit-= UI_TAP_PROGRESS_INTERVAL;
+        lv_bar_set_value(ui_BarTapProgress,ui_tap_remaining_credit,LV_ANIM_OFF);
+    
+        if ( ui_tap_remaining_credit <= 0 ) {
+#ifdef DEBUG
+            Serial.printf("[updateTapProgress] No credit remaining\n");
+#endif
+            internal_tap_close();
+            
+            lv_obj_add_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonTapStart,LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelTapInstructions,UI_LABEL_TAP_FINISHED);
+            
+            ui_tap_timeout = 3000 / UI_TAP_PROGRESS_INTERVAL;            
+        }
+    }
+
+}
+
+void ui_add_tap_credit(int credit) {
+    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+        ui_tap_remaining_credit += credit;        
+        lv_bar_set_range(ui_BarTapProgress,0,ui_tap_remaining_credit);
+        xSemaphoreGive(lvgl_sem);            
+    }
+}
+
 
 // update the state of the websocket in the admin screen
 void ui_update_websocket_state(const char *s) {
@@ -296,7 +408,14 @@ bool ui_tap_controls_visible() {
     return b;
 }
 
-
+void ui_hide_payment_buttons() {
+    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+        lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
+        xSemaphoreGive(lvgl_sem);        
+    }
+}
 
 // initialise buttons on the about page
 void ui_init_switches(int num,const char *label[]) {
@@ -425,13 +544,13 @@ void ui_load_about_screen() {
 // Close button on the config screen clicked
 void ui_event_button_config_servo_close_clicked(lv_event_t *e) {
     int value = atoi(lv_textarea_get_text(ui_TextAreaConfigServoClosed));
-    main_servo_write(value);
+    internal_servo_write(value);
 }
 
 // Open button on the config screen clicked
 void ui_event_button_config_servo_open_clicked(lv_event_t *e) {
     int value = atoi(lv_textarea_get_text(ui_TextAreaConfigServoOpen));
-    main_servo_write(value);
+    internal_servo_write(value);
 }
 
 // update button clicked
@@ -620,13 +739,13 @@ void ui_event_ButtonTapStartClicked(lv_event_t * e) {
     // TODO: ADd debounce to prevent servo damage
     if ( strcmp(lv_label_get_text(ui_LabelTapStart),UI_BUTTON_TAP_TAP) == 0 ) {
         lv_obj_clear_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
-        main_tap_resume();
+        internal_tap_resume();
         lv_label_set_text(ui_LabelTapStart,UI_BUTTON_TAP_PAUSE);
     } else if ( strcmp(lv_label_get_text(ui_LabelTapStart),UI_BUTTON_TAP_PAUSE) == 0) {
-        main_tap_pause();
+        internal_tap_pause();
         lv_label_set_text(ui_LabelTapStart,UI_BUTTON_TAP_RESUME);
     } else if ( strcmp(lv_label_get_text(ui_LabelTapStart),UI_BUTTON_TAP_RESUME) == 0) {
-        main_tap_resume();
+        internal_tap_resume();
         lv_label_set_text(ui_LabelTapStart,UI_BUTTON_TAP_PAUSE);
     }
 }
@@ -645,14 +764,14 @@ void ui_event_button_admin_open_clicked(lv_event_t * e) {
 #ifdef DEBUG
     Serial.println("[ui_event_button_admin_open_clicked]");
 #endif
-    main_tap_open();
+    internal_tap_open();
 }
 
 void ui_event_button_admin_close_clicked(lv_event_t * e) {
 #ifdef DEBUG
     Serial.println("[ui_event_button_admin_close_clicked]");
 #endif
-    main_tap_close();
+    internal_tap_close();
 }
 
 void ui_event_button_admin_free_clicked(lv_event_t * e) {
@@ -1287,8 +1406,11 @@ void ui_ScreenAbout_screen_init(void)
     ui_ImageAbout = lv_img_create(ui_ScreenAbout);
 #ifdef BRANDING_BITCOIN_FRIESLAND
     LV_IMG_DECLARE(Bitcoin_Friesland);
-    lv_img_set_src(ui_ImageAbout, &Bitcoin_Friesland); 
-#else
+    lv_img_set_src(ui_ImageAbout, &Bitcoin_Friesland);
+#elif BRANDING_WHY2025
+    LV_IMG_DECLARE(WHY2025_logo);
+    lv_img_set_src(ui_ImageAbout, &WHY2025_logo);
+#else    
     LV_IMG_DECLARE(kanhetal256);
     lv_img_set_src(ui_ImageAbout, &kanhetal256); 
 #endif
@@ -2054,13 +2176,27 @@ void ui_init(void) {
 
 void ui_loop(void *parameters) {
 
+    ui_servo = new Servo();
+    ui_servo->attach(5);
+    ui_tapConfig = main_get_tapconfig();
+    internal_tap_close();
+
+
+
     while ( 1 == 1 ) {        
         if ( xSemaphoreTake(lvgl_sem,100) == pdTRUE ) {
             lv_task_handler();
             gfx->flush();
 
-            if (( ui_message_millis != 0 ) && ( millis() > ui_message_millis )) {
+            unsigned long currentTime = millis();
+
+            if (( ui_message_millis != 0 ) && ( currentTime > ui_message_millis )) {
                 internal_hide_payment_message();
+            }
+
+            if (currentTime - previousRunTime >= UI_TAP_PROGRESS_INTERVAL ) {
+                previousRunTime = currentTime;
+                internal_update_tapprogress();
             }
 
             xSemaphoreGive(lvgl_sem);            

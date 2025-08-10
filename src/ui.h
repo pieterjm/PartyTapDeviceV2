@@ -25,6 +25,9 @@ bool ui_payment_screen_active();
 void ui_set_payment_message(const char *s,int delay);
 void ui_hide_payment_message();
 void ui_load_payment_screen();
+void ui_add_tap_credit(int credit);
+void ui_hide_payment_buttons();
+
 
 void ui_load_about_screen(); 
 
