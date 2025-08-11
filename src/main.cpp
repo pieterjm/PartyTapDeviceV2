@@ -329,6 +329,8 @@ void main_update_tapconfig(TapConfig cfg) {
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
         main_shared_tapConfig = TapConfig(&cfg);
         main_shared_tapConfig.save();
+        webSocket.setReconnectInterval(60000);
+        //webSocket.disableHeartbeat();
         webSocket.disconnect();
         WiFi.disconnect();
         xSemaphoreGive(control_sem);        
@@ -804,8 +806,9 @@ void checkNetwork()
                 Serial.printf("[checkNetwork] Starting WebSocket to: %s\n",config_wspath.c_str());
 #endif
                 webSocket.disconnect();
-                webSocket.enableHeartbeat(5000,2000,1);
                 webSocket.beginSSL(main_shared_tapConfig.getLNbitsHost(),443, config_wspath);                
+                webSocket.enableHeartbeat(5000,2000,1);
+                webSocket.setReconnectInterval(500);
             } else {
                 Serial.println("WEBSOCKET CONNECTED");
             }
