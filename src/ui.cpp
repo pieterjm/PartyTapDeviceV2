@@ -6,6 +6,7 @@
 #include <Arduino_GFX_Library.h>
 #include "ui.h"
 #include "bitcointap.h"
+#include "network.h"
 #include <ESP32Servo.h>
 
 static SemaphoreHandle_t lvgl_sem;
@@ -171,7 +172,11 @@ lv_obj_t *ui_KeyboardConfig;
 
 #define BB_FGCOLOR 0xFFFFFF
 #define BB_BGCOLOR 0x4E4D4D
+#ifdef BRANDING_WHY2025
 #define BB_NAME "Why Drink? Why Not!"
+#else
+#define BB_NAME "BitcoinTaps"
+#endif
 #define FIRMWARE_VERSION "test"
 
 void internal_servo_write(int i) {
@@ -268,45 +273,72 @@ void internal_update_tapprogress() {
 
 }
 
-void ui_add_tap_credit(int credit) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+// called from UI thread, so lock before accessing variables
+bool internal_verify_pin(String entered_pin) {
+#ifdef DEBUG
+    Serial.println("[internal_verify_pin]");
+#endif    
+    String pin = ui_tapConfig.getPIN();
+     
+    if (( pin.length() == 6 )&&(entered_pin.length() == 6)&&(pin.equals(entered_pin))) {
+        return true;
+    } else {
+        return false;
+    }
+
+}
+
+
+
+bool ui_add_tap_credit(int credit) {
+    if ( xSemaphoreTake(lvgl_sem,200) == pdTRUE ) {
         ui_tap_remaining_credit += credit;        
         lv_bar_set_range(ui_BarTapProgress,0,ui_tap_remaining_credit);
         xSemaphoreGive(lvgl_sem);            
+        return true;
     }
+    return false;
 }
 
 
 // update the state of the websocket in the admin screen
-void ui_update_websocket_state(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_update_websocket_state(const char *s) {
+    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
         lv_label_set_text_fmt(ui_LabelAdminWebSocketStatus,"WebSocket Status: %s",s);
         xSemaphoreGive(lvgl_sem);            
-    }
+        return true;
+    } 
+    return false;
 }
 
 // update the status string of the wifi connection in the admin screeen
-void ui_update_wifi_state(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_update_wifi_state(const char *s) {
+    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
         lv_label_set_text_fmt(ui_LabelAdminWiFiStatus,"WiFi Status: %s",s);
         xSemaphoreGive(lvgl_sem);            
+        return true;
     }    
+    return false;
 }
 
 // update the server version string in the admin screen
-void ui_update_server_version(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_update_server_version(const char *s) {
+    if ( xSemaphoreTake(lvgl_sem,300) == pdTRUE ) {
         lv_label_set_text_fmt(ui_LabelAdminServerVersion,"Server version: %s",s);
-        xSemaphoreGive(lvgl_sem);            
+        xSemaphoreGive(lvgl_sem);   
+        return true;         
     }
+    return false;
 }
 
 // update the server branding in the admin screen
-void ui_update_server_branding(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_update_server_branding(const char *s) {
+    if ( xSemaphoreTake(lvgl_sem,200) == pdTRUE ) {
         lv_label_set_text_fmt(ui_LabelAdminBranding,"Server branding: %s",s);
-       xSemaphoreGive(lvgl_sem);            
+        xSemaphoreGive(lvgl_sem);            
+        return true;
     }
+    return false;
 }
 
 void internal_set_payment_message(const char *s,int delay) {
@@ -318,11 +350,13 @@ void internal_set_payment_message(const char *s,int delay) {
 }
 
 // set the message of the payment status on the payment screen
-void ui_set_payment_message(const char *s,int delay) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_set_payment_message(const char *s,int delay) {
+    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
         internal_set_payment_message(s,delay);
         xSemaphoreGive(lvgl_sem);            
+        return false;
     }            
+    return true;
 }
 
 
@@ -332,98 +366,55 @@ void internal_hide_payment_message() {
     lv_obj_add_flag(ui_PanelAboutMessage,LV_OBJ_FLAG_HIDDEN);
 }
 
-void ui_hide_payment_message() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_hide_payment_message() {
+    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
         internal_hide_payment_message();
-        xSemaphoreGive(lvgl_sem);            
+        xSemaphoreGive(lvgl_sem);   
+        return true;         
     }
-}
-
-
-
-// hide the QR code on the payment screen
-void ui_hide_qrcode() {
-    Serial.println("[ui_hide_qr_code]");
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_obj_add_flag(ui_QrcodePayment, LV_OBJ_FLAG_HIDDEN);
-        xSemaphoreGive(lvgl_sem);            
-    }
+    return false;
 }
 
 // display the qr code on the payment screen
-void ui_display_qrcode(const char *s,int len) {
-#ifdef DEBUG    
-    Serial.println("[ui_display_qrcode]");
-#endif
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_display_qrcode(const char *s,int len) {
+    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
         lv_obj_clear_flag(ui_QrcodePayment, LV_OBJ_FLAG_HIDDEN);
         lv_qrcode_update(ui_QrcodePayment, s, len);
         xSemaphoreGive(lvgl_sem);        
+        return true;
     }
+    return false;
 }
 
 // navigate to the payment screen
-void ui_load_payment_screen() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_load_payment_screen() {
+    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
         lv_disp_load_scr(ui_ScreenPayment);        
         xSemaphoreGive(lvgl_sem);        
+        return true;
     }
+    return false;
 }
 
 
-// show tap controls
-void ui_tap_show_controls() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_label_set_text(ui_LabelTapInstructions,UI_LABEL_TAP_INSTRUCTION);
-        lv_label_set_text(ui_LabelTapStart,UI_BUTTON_TAP_TAP);
-        lv_obj_clear_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_ButtonTapStart,LV_OBJ_FLAG_HIDDEN);
-        xSemaphoreGive(lvgl_sem);        
-    }
-}
-
-
-// navigate to the payment screen
-void ui_tap_load_screen() {
-#ifdef DEBUG    
-    Serial.println("[ui_load_tap_screen]");
-#endif
-    ui_tap_show_controls();
-
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_disp_load_scr(ui_ScreenTap);        
-        xSemaphoreGive(lvgl_sem);        
-    }
-}
-
-// return true if all tap controls visible
-bool ui_tap_controls_visible() {
-    bool b = false;
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        if (lv_obj_is_visible(ui_BarTapProgress)&&lv_obj_is_visible(ui_ButtonTapStart)) {
-            b = true;
-        }
-        xSemaphoreGive(lvgl_sem);        
-    }
-    return b;
-}
-
-void ui_hide_payment_buttons() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_hide_payment_buttons() {
+    if ( xSemaphoreTake(lvgl_sem,300) == pdTRUE ) {
         lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
         xSemaphoreGive(lvgl_sem);        
+        return true;
     }
+    return false;
 }
 
 // initialise buttons on the about page
-void ui_init_switches(int num,const char *label[]) {
+bool ui_init_switches(int num,const char *label[]) {
 #ifdef DEBUG    
     Serial.println("[ui_init_switches]");
 #endif
 
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(lvgl_sem,700) == pdTRUE ) {
         switch ( num ) {
             case 1:
                 lv_obj_clear_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
@@ -459,13 +450,15 @@ void ui_init_switches(int num,const char *label[]) {
                 break;
         }        
         xSemaphoreGive(lvgl_sem);        
+        return true;
     }
+    return false;
 }
 
 // return true if the current screen is the payment screen
 bool ui_payment_screen_active() {
     bool b = false;
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
         if ( ui_ScreenPayment == lv_screen_active() ) {
             b = true;
         }
@@ -477,7 +470,7 @@ bool ui_payment_screen_active() {
 // return true if the current screen is the admin screen
 bool ui_admin_screen_active() {
     bool b = false;
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
         if ( ui_ScreenAdmin == lv_screen_active() ) {
             b = true;
         }
@@ -486,57 +479,14 @@ bool ui_admin_screen_active() {
     return b;
 }
 
-
-// return true if the current screen is the payment screen
-bool ui_tap_screen_active() {
-    bool b = false;
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        if ( ui_ScreenTap == lv_screen_active() ) {
-            b = true;
-        }
-        xSemaphoreGive(lvgl_sem);        
-    }    
-    return b;
-}
-
-
-
-
-// set the maximum value of the tap progress bar
-void ui_set_tap_bar_max(int max) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_obj_clear_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
-        lv_bar_set_range(ui_BarTapProgress,0,max);
-        xSemaphoreGive(lvgl_sem);        
-    }    
-}
-
-// update the progress bar on the tap page
-void ui_set_tap_bar_value(int value) {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_obj_clear_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
-        lv_bar_set_value(ui_BarTapProgress,value,LV_ANIM_OFF);
-        xSemaphoreGive(lvgl_sem);        
-    }    
-}
-
-// when the tapping is ready, remove the button and the progress bar
-void ui_tap_finished() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
-        lv_obj_add_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_ButtonTapStart,LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(ui_LabelTapInstructions,UI_LABEL_TAP_FINISHED);
-        xSemaphoreGive(lvgl_sem);        
-    }    
-}
-
-
 // open the about screen
-void ui_load_about_screen() {
-    if ( xSemaphoreTake(lvgl_sem,portMAX_DELAY) == pdTRUE ) {
+bool ui_load_about_screen() {
+    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
         lv_disp_load_scr(ui_ScreenAbout);        
-        xSemaphoreGive(lvgl_sem);        
+        xSemaphoreGive(lvgl_sem);   
+        return true;     
     }
+    return false;
 }
 
 // from here down are the ui events
@@ -602,8 +552,11 @@ void ui_event_button_config_save_clicked(lv_event_t * e) {
     	ui_tapConfig.setControlMode(CONTROL_MODE_NONE);
  	}
 
+    ui_tapConfig.save();
+
     // copy updated config to main
-    main_update_tapconfig(ui_tapConfig);
+    // update and restart network 
+    network_restart(ui_tapConfig.getWiFiSSID(),ui_tapConfig.getWiFiPWD(),ui_tapConfig.getLNbitsHost(),ui_tapConfig.getDeviceID());
     
     // go back to the admin screen
     lv_disp_load_scr(ui_ScreenAdmin);
@@ -688,7 +641,7 @@ void ui_event_ButtonPinCancelClicked(lv_event_t * e) {
 // change pin event
 void ui_event_button_config_pin_ok_clicked(lv_event_t * e) {
     if ( 
-        main_verify_pin(lv_textarea_get_text(ui_TextAreaConfigPINCurrent)) &&
+        internal_verify_pin(lv_textarea_get_text(ui_TextAreaConfigPINCurrent)) &&
         (strlen(lv_textarea_get_text(ui_TextAreaConfigPINNew)) == 6) &&
         (strlen(lv_textarea_get_text(ui_TextAreaConfigPINRepeat)) == 6) &&
         (strcmp(lv_textarea_get_text(ui_TextAreaConfigPINNew),lv_textarea_get_text(ui_TextAreaConfigPINRepeat))==0)) {
@@ -704,7 +657,7 @@ void ui_event_button_config_pin_ok_clicked(lv_event_t * e) {
 // verify the PIN and switch to Admin screen if correct
 void ui_event_ButtonPinOKClicked(lv_event_t * e) {
     // verify if the PIN is correct
-    if ( main_verify_pin(ui_PinEnteredPin) ) {
+    if ( internal_verify_pin(ui_PinEnteredPin) ) {
     
         // reset the message
         lv_label_set_text(ui_LabelPinMessage, "ENTER PIN");
@@ -783,9 +736,6 @@ void ui_event_button_admin_free_clicked(lv_event_t * e) {
 // get the current config and go to the config screen
 void ui_event_ButtonAdminConfigClicked(lv_event_t * e) {
     char servo_text[10];
-
-    // retrieve config from the main thread
-    ui_tapConfig = main_get_tapconfig();
     
     // fill in data in the UI
     lv_textarea_set_text(ui_TextAreaConfigSSID,ui_tapConfig.getWiFiSSID());
@@ -2175,10 +2125,11 @@ void ui_init(void) {
 
 
 void ui_loop(void *parameters) {
+    ui_tapConfig.load();
+    network_restart(ui_tapConfig.getWiFiSSID(),ui_tapConfig.getWiFiPWD(),ui_tapConfig.getLNbitsHost(),ui_tapConfig.getDeviceID());
 
     ui_servo = new Servo();
     ui_servo->attach(5);
-    ui_tapConfig = main_get_tapconfig();
     internal_tap_close();
 
 

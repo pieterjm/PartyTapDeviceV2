@@ -1,19 +1,14 @@
 #ifndef _BITCOINTAP_H_
 #define _BITCOINTAP_H_
 
-#include "tapconfig.h"
+#define DEBUG
 
+void debug(const char *function,const char *format, ...);
 
-TapConfig main_get_tapconfig();
+void tone_paid();
 
-void main_update_tapconfig(TapConfig cfg);
+void tone_paymentfailed();
 
-bool main_verify_pin(String entered_pin);
-
-void main_get_invoice(int product);
-
-void main_nfc_read_success(const uint8_t *buffer,int num);
-
-bool main_firmware_update();
+void tone_switches();
 
 #endif
