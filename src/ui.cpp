@@ -387,9 +387,10 @@ bool ui_display_qrcode(const char *s,int len) {
 }
 
 // navigate to the payment screen
-bool ui_load_payment_screen() {
+bool ui_load_payment_screen(int amount, const char *currency) {
     if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
         lv_disp_load_scr(ui_ScreenPayment);        
+        lv_label_set_text_fmt(ui_LabelPaymentHeader,"PAY %d %s",amount,currency);
         xSemaphoreGive(lvgl_sem);        
         return true;
     }
@@ -421,6 +422,7 @@ bool ui_init_switches(int num,const char *label[]) {
                 lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
                 lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
                 lv_label_set_text(ui_LabelAboutOne,label[0]);
+                lv_obj_set_width(ui_ButtonAboutOne, 256);
                 lv_obj_set_x(ui_ButtonAboutOne, 0);
                 break;
             case 2:
@@ -429,8 +431,10 @@ bool ui_init_switches(int num,const char *label[]) {
                 lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
                 lv_label_set_text(ui_LabelAboutOne,label[0]);
                 lv_label_set_text(ui_LabelAboutTwo,label[1]);
-                lv_obj_set_x(ui_ButtonAboutOne, -60);
-                lv_obj_set_x(ui_ButtonAboutTwo, 60);
+                lv_obj_set_x(ui_ButtonAboutOne, -70);
+                lv_obj_set_x(ui_ButtonAboutTwo, 70);
+                lv_obj_set_width(ui_ButtonAboutOne, 120);
+                lv_obj_set_width(ui_ButtonAboutTwo, 120);
                 break;
             case 3:
                 lv_obj_clear_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
@@ -442,6 +446,9 @@ bool ui_init_switches(int num,const char *label[]) {
                 lv_obj_set_x(ui_ButtonAboutOne, -105);
                 lv_obj_set_x(ui_ButtonAboutTwo, 0);
                 lv_obj_set_x(ui_ButtonAboutThree, 105);
+                lv_obj_set_width(ui_ButtonAboutOne, 100);
+                lv_obj_set_width(ui_ButtonAboutTwo, 100);
+                lv_obj_set_width(ui_ButtonAboutThree, 100);
                 break;
             default:
                 lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
@@ -1388,7 +1395,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_obj_set_height(ui_ButtonAboutOne, 100);
     lv_obj_set_align(ui_ButtonAboutOne, LV_ALIGN_BOTTOM_MID);
     lv_obj_set_x(ui_ButtonAboutOne, 0);
-    lv_obj_set_y(ui_ButtonAboutOne, -60);
+    lv_obj_set_y(ui_ButtonAboutOne, -50);
     lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_bg_color(ui_ButtonAboutOne, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
@@ -1409,7 +1416,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_obj_set_height(ui_ButtonAboutTwo, 100);
     lv_obj_set_align(ui_ButtonAboutTwo, LV_ALIGN_BOTTOM_MID);
     lv_obj_set_x(ui_ButtonAboutTwo, 0);
-    lv_obj_set_y(ui_ButtonAboutTwo, -60);
+    lv_obj_set_y(ui_ButtonAboutTwo, -50);
     lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_bg_color(ui_ButtonAboutTwo, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
@@ -1430,7 +1437,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_obj_set_height(ui_ButtonAboutThree, 100);
     lv_obj_set_align(ui_ButtonAboutThree, LV_ALIGN_BOTTOM_MID);
     lv_obj_set_x(ui_ButtonAboutThree, 0);
-    lv_obj_set_y(ui_ButtonAboutThree, -60);
+    lv_obj_set_y(ui_ButtonAboutThree, -50);
     lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_bg_color(ui_ButtonAboutThree, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
@@ -1498,14 +1505,14 @@ void ui_ScreenPayment_screen_init(void)
     lv_obj_set_width(ui_LabelPaymentHeader, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_LabelPaymentHeader, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_align(ui_LabelPaymentHeader, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelPaymentHeader, "PAY FOR YOUR DRINK");
+    lv_label_set_text(ui_LabelPaymentHeader, "BitcoinTaps");
     lv_obj_set_style_text_color(ui_LabelPaymentHeader, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPaymentHeader, 255, LV_STATE_ANY);
     lv_obj_set_style_text_font(ui_LabelPaymentHeader, &ui_font_UbuntuBoldItalic, 0);
 
     ui_ButtonPaymentCancel = lv_btn_create(ui_ScreenPayment);
     lv_obj_set_width(ui_ButtonPaymentCancel, 120);
-    lv_obj_set_height(ui_ButtonPaymentCancel, 50);
+    lv_obj_set_height(ui_ButtonPaymentCancel, 60);
     lv_obj_set_x(ui_ButtonPaymentCancel, 0);
     lv_obj_set_y(ui_ButtonPaymentCancel, -10);
     lv_obj_set_align(ui_ButtonPaymentCancel, LV_ALIGN_BOTTOM_MID);
@@ -1525,7 +1532,7 @@ void ui_ScreenPayment_screen_init(void)
 
     ui_ButtonPaymentEnterPin = lv_btn_create(ui_ScreenPayment);
     lv_obj_set_width(ui_ButtonPaymentEnterPin, 120);
-    lv_obj_set_height(ui_ButtonPaymentEnterPin, 50);
+    lv_obj_set_height(ui_ButtonPaymentEnterPin, 60);
     lv_obj_set_x(ui_ButtonPaymentEnterPin, -70);
     lv_obj_set_y(ui_ButtonPaymentEnterPin, -10);
     lv_obj_set_align(ui_ButtonPaymentEnterPin, LV_ALIGN_BOTTOM_MID);
@@ -1545,8 +1552,8 @@ void ui_ScreenPayment_screen_init(void)
     lv_obj_set_style_text_font(ui_LabelPaymentEnterPin, &ui_font_UbuntuBoldItalic, 0);
 
     // initialize the QR code
-    lv_color_t bg_color = lv_color_hex(0xFFFFFF);
-    lv_color_t fg_color = lv_color_hex(0x000000);
+    lv_color_t bg_color = lv_color_hex(0x000000);
+    lv_color_t fg_color = lv_color_hex(0xFFFFFF);
     ui_QrcodePayment = lv_qrcode_create(ui_ScreenPayment);
     lv_qrcode_set_size(ui_QrcodePayment,240);
     lv_qrcode_set_light_color(ui_QrcodePayment,fg_color);
@@ -1560,7 +1567,7 @@ void ui_ScreenPayment_screen_init(void)
     ui_PanelPaymentMessage = lv_obj_create(ui_ScreenPayment);
     lv_obj_set_y(ui_PanelPaymentMessage,140);
     lv_obj_set_width(ui_PanelPaymentMessage, 256);
-    lv_obj_set_height(ui_PanelPaymentMessage, 50);
+    lv_obj_set_height(ui_PanelPaymentMessage, 30);
     lv_obj_clear_flag(ui_PanelPaymentMessage, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_align(ui_PanelPaymentMessage, LV_ALIGN_CENTER);
     lv_obj_set_style_bg_color(ui_PanelPaymentMessage, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
@@ -1577,6 +1584,7 @@ void ui_ScreenPayment_screen_init(void)
     lv_obj_set_style_text_color(ui_LabelPaymentMessage, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelPaymentMessage, 255, LV_STATE_ANY);
     lv_obj_set_style_text_font(ui_LabelPaymentMessage, &ui_font_UbuntuBoldItalic, 0);
+
 
     lv_obj_add_event_cb(ui_ButtonPaymentEnterPin,ui_event_ButtonPaymentEnterPinClicked, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(ui_ButtonPaymentCancel, ui_event_ButtonPaymentCancelClicked, LV_EVENT_CLICKED, NULL);

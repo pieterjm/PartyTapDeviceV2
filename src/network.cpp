@@ -15,6 +15,7 @@ static SemaphoreHandle_t control_sem;
 String payment_request = "";
 String payment_hash = "";
 String payment_pin = "";
+int selected_product_id = 0;  // the ID of the selected product
 
 uint8_t main_shared_lnurlw[512];
 int main_shared_lnurlw_len = 0;
@@ -217,9 +218,9 @@ void main_get_invoice(int product) {
     int i;
 
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+        selected_product_id = product;
 
-
-        ws_request_invoice(productConfig.getProduct(product)->getSwitchID());
+        ws_request_invoice(productConfig.getProduct(selected_product_id)->getSwitchID());
         xSemaphoreGive(control_sem);        
     }
 }
@@ -231,7 +232,7 @@ void network_restart(String wifi_ssid,String wifi_pwd,String lnbitshost,String d
         config_wifi_ssid = wifi_ssid;
         config_wifi_pwd = wifi_pwd;
         config_lnbitshost = lnbitshost;
-        config_wspath = "/partytap/api/v1/ws/" + deviceid;
+        config_wspath = "/partytap/api/v1/ws/" + deviceid;        
         webSocket.setReconnectInterval(60000);
         webSocket.disconnect();
         WiFi.disconnect();
@@ -263,12 +264,8 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                 const char *eventtype = doc["event"].as<const char *>();
                 debug("ws_event","eventtype: %s",eventtype);
                 if ( strcmp(eventtype,WS_EVENTTYPE_SWITCHES) == 0 ) {
-                    tone_switches();
-
                     productConfig.parse(&doc);
                     productConfig.save();
-
-                    internal_set_message("CONNECTED",1);
 
 
                     // configure switches in the UI
@@ -278,6 +275,8 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     }
                     ui_init_switches(productConfig.getNumProducts(),(const char **)labels);
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_INVOICE) == 0 ) {
+
+
                     payment_request = doc["pr"].as<const char *>();
                     payment_hash = doc["payment_hash"].as<const char *>();
 
@@ -286,7 +285,6 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     expireInvoiceTask.restartDelayed(TASK_SECOND * 120);
                         
                     // make a withdraw is lengthis larger than 0, otherwise navigate to the payment screen
-                    Serial.printf("[ws_event] main_shared_lnurlw_len = %d\n",main_shared_lnurlw_len);       
                     if ( main_shared_lnurlw_len > 0 ) {                 
                         ws_lnurlw_withdraw((const char *)main_shared_lnurlw); 
                         main_shared_lnurlw[0] = '\0';
@@ -295,7 +293,9 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                         ui_hide_payment_message();
                     }
                     
-                    ui_load_payment_screen();
+
+                    
+                    ui_load_payment_screen(productConfig.getProduct(selected_product_id)->getAmount(),productConfig.getProduct(selected_product_id)->getCurrency());
                     ui_display_qrcode(payment_request.c_str(),payment_request.length());
                     
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAID) == 0 ) {
@@ -329,10 +329,10 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
             }
             break;
         case WStype_PING:
-            debug("ws_event","Received PING");
+            //debug("ws_event","Received PING");
             break;
         case WStype_PONG:
-            debug("ws_event","Received PONG");
+            //debug("ws_event","Received PONG");
             break;
         default:
             debug("ws_event","unhandled event of type = %d\n",type);
