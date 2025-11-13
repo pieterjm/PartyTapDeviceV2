@@ -1367,6 +1367,9 @@ void ui_ScreenAbout_screen_init(void)
 #elif BRANDING_WHY2025
     LV_IMG_DECLARE(WHY2025_logo);
     lv_img_set_src(ui_ImageAbout, &WHY2025_logo);
+#elif BRANDING_BITCOINTAPS
+    LV_IMG_DECLARE(BitcoinTaps_vkWhite256);
+    lv_img_set_src(ui_ImageAbout, &BitcoinTaps_vkWhite256);
 #else    
     LV_IMG_DECLARE(kanhetal256);
     lv_img_set_src(ui_ImageAbout, &kanhetal256); 
@@ -1771,6 +1774,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_label_set_text(ui_LabelConfigPaymentMode, "Payment mode");
     lv_obj_set_style_text_color(ui_LabelConfigPaymentMode, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigPaymentMode, 255, LV_STATE_ANY);
+    lv_obj_add_flag(ui_LabelConfigPaymentMode,LV_OBJ_FLAG_HIDDEN);
     // lv_obj_set_style_text_font(ui_LabelConfigPaymentMode, &lv_font_montserrat_16, LV_STATE_ANY);
 
     // Drop Down for Payment mode
@@ -1782,6 +1786,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_y(ui_DropdownConfigPaymentMode, 335);
     lv_obj_set_align(ui_DropdownConfigPaymentMode, LV_ALIGN_TOP_RIGHT);
     lv_obj_add_flag(ui_DropdownConfigPaymentMode, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
+    lv_obj_add_flag(ui_DropdownConfigPaymentMode,LV_OBJ_FLAG_HIDDEN);
 
     // Label for control mode
     ui_LabelConfigControlMode = lv_label_create(ui_ScreenConfig);
