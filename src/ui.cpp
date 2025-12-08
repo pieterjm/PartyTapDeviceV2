@@ -17,7 +17,7 @@ unsigned long ui_message_millis = 0; // millis when a message has been set
 bool bFreeDrink = false;
 Servo *ui_servo;
 bool ui_tap_running = false; 
-int ui_tap_remaining_credit = 0;
+long ui_tap_remaining_credit = 0;
 int ui_tap_timeout = 0;
 unsigned long previousRunTime;
 
@@ -2072,7 +2072,7 @@ void ui_init(void) {
     
     int rotation = 0;
     gfx->setRotation(rotation);
-    gfx->fillScreen(BLACK);
+    //gfx->fillScreen(BLACK);
         
     // Switch backlight on
     pinMode(TFT_BL, OUTPUT);
@@ -2135,7 +2135,10 @@ void ui_init(void) {
     lv_disp_load_scr(ui_ScreenAbout);
 }
 
-
+void IRAM_ATTR pulseCounter()
+{
+    ui_tap_remaining_credit--;
+}
 
 void ui_loop(void *parameters) {
     ui_tapConfig.load();
@@ -2145,8 +2148,10 @@ void ui_loop(void *parameters) {
     ui_servo->attach(5);
     internal_tap_close();
 
-
-
+#define SENSOR 6
+    pinMode(SENSOR, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(SENSOR),pulseCounter, FALLING);
+    ui_tap_remaining_credit = 1000;
     while ( 1 == 1 ) {        
         if ( xSemaphoreTake(lvgl_sem,100) == pdTRUE ) {
             lv_task_handler();
@@ -2165,6 +2170,8 @@ void ui_loop(void *parameters) {
 
             xSemaphoreGive(lvgl_sem);            
         }        
+
+        Serial.println(ui_tap_remaining_credit);
         vTaskDelay(25);
     }
 }
