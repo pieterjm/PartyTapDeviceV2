@@ -312,9 +312,9 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     payment_hash = "";
                     payment_request = "";
                     
-                    int tap_credit = doc["payload"].as<int>();
-                    while ( ui_add_tap_credit(tap_credit) == false ) {
-                        debug("ws_event","Failed to add tap credit, retrying");
+                    int tap_volume = doc["payload"].as<int>();
+                    while ( ui_add_tap_volume(tap_volume) == false ) {
+                        debug("ws_event","Failed to add tap volume, retrying");
                         vTaskDelay(200);
                     }
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAYMENTFAILED) == 0 ) {   

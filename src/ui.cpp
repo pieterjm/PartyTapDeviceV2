@@ -17,7 +17,7 @@ unsigned long ui_message_millis = 0; // millis when a message has been set
 bool bFreeDrink = false;
 Servo *ui_servo;
 bool ui_tap_running = false; 
-long ui_tap_remaining_credit = 0;
+long ui_tap_remaining_volume = 0;
 int ui_tap_timeout = 0;
 unsigned long previousRunTime;
 
@@ -147,6 +147,8 @@ lv_obj_t *ui_DropdownConfigPaymentMode;
 lv_obj_t *ui_ButtonConfigServoOpen;
 lv_obj_t *ui_LabelConfigControlMode;
 lv_obj_t *ui_DropdownConfigControlMode;
+lv_obj_t *ui_LabelConfigVolumePerUnit;
+lv_obj_t *ui_TextAreaConfigVolumePerUnit;
 lv_obj_t *ui_ButtonConfigSave;
 lv_obj_t *ui_LabelConfigServoOpen;
 lv_obj_t *ui_LabelConfigDone;
@@ -188,10 +190,12 @@ void internal_servo_write(int i) {
 
 void internal_tap_open() {
     internal_servo_write(ui_tapConfig.getServoOpen());
+    digitalWrite(RELAY_PIN,HIGH);
 }
 
 void internal_tap_close() {
     internal_servo_write(ui_tapConfig.getServoClose());
+    digitalWrite(RELAY_PIN,LOW);
 }
 
 // close the tap
@@ -213,11 +217,10 @@ void internal_tap_resume() {
 // Tap progress
 // running in the main loop process, do not lock here
 void internal_update_tapprogress() {
-    // Serial.printf("[updateTapProgress]  %d %d\n",ui_tap_remaining_credit,ui_tap_timeout);
+    // Serial.printf("[updateTapProgress]  %d %d\n",ui_tap_remaining_volume,ui_tap_timeout);
 
-
-    if ( ui_tap_remaining_credit <= 0 ) {
-        ui_tap_remaining_credit = 0;
+    if ( ui_tap_remaining_volume <= 0 ) {
+        ui_tap_remaining_volume = 0;
         if ( ui_tap_timeout <= 0 ) {
             if (ui_ScreenTap == lv_screen_active()) {
                 lv_disp_load_scr(ui_ScreenAbout);        
@@ -228,13 +231,7 @@ void internal_update_tapprogress() {
         return;
     }
 
-
-
-
-    //Serial.printf("[updateTapProgress] tap credit = %d, timeout = %d\n",ui_tap_remaining_credit,ui_tap_timeout);
-
-
-    // we have credit, load the tap screen if not loaded
+    // load the tap screen if not loaded
     if ( ui_ScreenTap != lv_screen_active() ) {
         ui_tap_running = false;
         lv_label_set_text(ui_LabelTapInstructions,UI_LABEL_TAP_INSTRUCTION);
@@ -250,17 +247,17 @@ void internal_update_tapprogress() {
         lv_obj_clear_flag(ui_ButtonTapStart,LV_OBJ_FLAG_HIDDEN);
     }
 
-    lv_bar_set_value(ui_BarTapProgress,ui_tap_remaining_credit,LV_ANIM_OFF);
+    lv_bar_set_value(ui_BarTapProgress,ui_tap_remaining_volume,LV_ANIM_OFF);
     
     // if the tap is running
     if ( ui_tap_running  ) {
-        ui_tap_remaining_credit-= UI_TAP_PROGRESS_INTERVAL;
-        lv_bar_set_value(ui_BarTapProgress,ui_tap_remaining_credit,LV_ANIM_OFF);
+        if ( ui_tapConfig.getControlMode() == CONTROL_MODE_TIME ) {
+            // substract the volume adjusted for the interval
+            ui_tap_remaining_volume -= (1000 * ui_tapConfig.getVolumePerUnit()) / UI_TAP_PROGRESS_INTERVAL;
+        }
+        lv_bar_set_value(ui_BarTapProgress,ui_tap_remaining_volume,LV_ANIM_OFF);
     
-        if ( ui_tap_remaining_credit <= 0 ) {
-#ifdef DEBUG
-            Serial.printf("[updateTapProgress] No credit remaining\n");
-#endif
+        if ( ui_tap_remaining_volume <= 0 ) {
             internal_tap_close();
             
             lv_obj_add_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
@@ -290,10 +287,10 @@ bool internal_verify_pin(String entered_pin) {
 
 
 
-bool ui_add_tap_credit(int credit) {
+bool ui_add_tap_volume(int volume) {
     if ( xSemaphoreTake(lvgl_sem,200) == pdTRUE ) {
-        ui_tap_remaining_credit += credit;        
-        lv_bar_set_range(ui_BarTapProgress,0,ui_tap_remaining_credit);
+        ui_tap_remaining_volume += volume;        
+        lv_bar_set_range(ui_BarTapProgress,0,ui_tap_remaining_volume);
         xSemaphoreGive(lvgl_sem);            
         return true;
     }
@@ -540,6 +537,7 @@ void ui_event_button_config_save_clicked(lv_event_t * e) {
     ui_tapConfig.setDeviceID(lv_textarea_get_text(ui_TextAreaConfigDeviceID));
     ui_tapConfig.setServoOpen(atoi(lv_textarea_get_text(ui_TextAreaConfigServoOpen)));
     ui_tapConfig.setServoClose(atoi(lv_textarea_get_text(ui_TextAreaConfigServoClosed)));
+    ui_tapConfig.setVolumePerUnit(atoi(lv_textarea_get_text(ui_TextAreaConfigVolumePerUnit)));
     
     lv_dropdown_get_selected_str(ui_DropdownConfigPaymentMode,buf,sizeof(buf));
 	if ( strncasecmp(buf,"online",6) == 0 ) {
@@ -553,11 +551,12 @@ void ui_event_button_config_save_clicked(lv_event_t * e) {
 	lv_dropdown_get_selected_str(ui_DropdownConfigControlMode, buf, sizeof(buf));
 	if ( strncasecmp(buf,"Time",4) == 0 ) {
     	ui_tapConfig.setControlMode(CONTROL_MODE_TIME);
-  	} else if ( strncasecmp(buf,"Credit",6) == 0 ) {
-    	ui_tapConfig.setControlMode(CONTROL_MODE_CREDIT);
+  	} else if ( strncasecmp(buf,"Pulse",5) == 0 ) {
+    	ui_tapConfig.setControlMode(CONTROL_MODE_PULSE);
   	} else {
     	ui_tapConfig.setControlMode(CONTROL_MODE_NONE);
  	}
+
 
     ui_tapConfig.save();
 
@@ -742,17 +741,19 @@ void ui_event_button_admin_free_clicked(lv_event_t * e) {
 
 // get the current config and go to the config screen
 void ui_event_ButtonAdminConfigClicked(lv_event_t * e) {
-    char servo_text[10];
+    char ui_text[10];
     
     // fill in data in the UI
     lv_textarea_set_text(ui_TextAreaConfigSSID,ui_tapConfig.getWiFiSSID());
     lv_textarea_set_text(ui_TextAreaConfigWifiPassword,ui_tapConfig.getWiFiPWD());
     lv_textarea_set_text(ui_TextAreaConfigLNbitsHost,ui_tapConfig.getLNbitsHost());
     lv_textarea_set_text(ui_TextAreaConfigDeviceID,ui_tapConfig.getDeviceID());
-    snprintf_P(servo_text, sizeof(servo_text), PSTR("%d"), ui_tapConfig.getServoOpen());
-    lv_textarea_set_text(ui_TextAreaConfigServoOpen,servo_text);
-    snprintf_P(servo_text, sizeof(servo_text), PSTR("%d"), ui_tapConfig.getServoClose());
-    lv_textarea_set_text(ui_TextAreaConfigServoClosed,servo_text);
+    snprintf_P(ui_text, sizeof(ui_text), PSTR("%d"), ui_tapConfig.getServoOpen());
+    lv_textarea_set_text(ui_TextAreaConfigServoOpen,ui_text);
+    snprintf_P(ui_text, sizeof(ui_text), PSTR("%d"), ui_tapConfig.getServoClose());
+    lv_textarea_set_text(ui_TextAreaConfigServoClosed,ui_text);
+    snprintf_P(ui_text, sizeof(ui_text), PSTR("%d"), ui_tapConfig.getVolumePerUnit());
+    lv_textarea_set_text(ui_TextAreaConfigVolumePerUnit,ui_text);
     lv_dropdown_set_selected(ui_DropdownConfigControlMode,ui_tapConfig.getControlMode());
     lv_dropdown_set_selected(ui_DropdownConfigPaymentMode,ui_tapConfig.getPaymentMode());
 
@@ -1678,11 +1679,31 @@ void ui_ScreenConfig_screen_init(void)
     lv_textarea_set_placeholder_text(ui_TextAreaConfigDeviceID, "Device ID");
     lv_textarea_set_one_line(ui_TextAreaConfigDeviceID, true);
 
+     // Label for Volume per Unit Payload configuration
+    ui_LabelConfigVolumePerUnit = lv_label_create(ui_ScreenConfig);
+    lv_obj_set_width(ui_LabelConfigVolumePerUnit, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_LabelConfigVolumePerUnit, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_LabelConfigVolumePerUnit, 10);
+    lv_obj_set_y(ui_LabelConfigVolumePerUnit, 195);
+    lv_label_set_text(ui_LabelConfigVolumePerUnit, "Volume per Pulse/Second");
+    lv_obj_set_style_text_color(ui_LabelConfigVolumePerUnit, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
+    lv_obj_set_style_text_opa(ui_LabelConfigVolumePerUnit, 255, LV_STATE_ANY);
+//    lv_obj_set_style_text_font(ui_LabelConfigVolumePerUnit, &lv_font_montserrat_16, LV_STATE_ANY);
+
+    ui_TextAreaConfigVolumePerUnit = lv_textarea_create(ui_ScreenConfig);
+    lv_obj_set_width(ui_TextAreaConfigVolumePerUnit, 95);
+    lv_obj_set_height(ui_TextAreaConfigVolumePerUnit, LV_SIZE_CONTENT);    /// 70
+    lv_obj_set_x(ui_TextAreaConfigVolumePerUnit, -10);
+    lv_obj_set_y(ui_TextAreaConfigVolumePerUnit, 185);
+    lv_obj_set_align(ui_TextAreaConfigVolumePerUnit, LV_ALIGN_TOP_RIGHT);
+    lv_textarea_set_placeholder_text(ui_TextAreaConfigVolumePerUnit, "Enter a number");
+    lv_textarea_set_one_line(ui_TextAreaConfigVolumePerUnit, true);
+
     ui_LabelConfigServo = lv_label_create(ui_ScreenConfig);
     lv_obj_set_width(ui_LabelConfigServo, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_LabelConfigServo, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_LabelConfigServo, 10);
-    lv_obj_set_y(ui_LabelConfigServo, 195);
+    lv_obj_set_y(ui_LabelConfigServo, 240);
     lv_label_set_text(ui_LabelConfigServo, "Servo");
     lv_obj_set_style_text_color(ui_LabelConfigServo, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigServo, 255, LV_STATE_ANY);
@@ -1692,7 +1713,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_width(ui_TextAreaConfigServoClosed, 95);
     lv_obj_set_height(ui_TextAreaConfigServoClosed, LV_SIZE_CONTENT);    /// 70
     lv_obj_set_x(ui_TextAreaConfigServoClosed, 0);
-    lv_obj_set_y(ui_TextAreaConfigServoClosed, 185);
+    lv_obj_set_y(ui_TextAreaConfigServoClosed, 230);
     lv_obj_set_align(ui_TextAreaConfigServoClosed, LV_ALIGN_TOP_MID);
     lv_textarea_set_placeholder_text(ui_TextAreaConfigServoClosed, "--");
     lv_textarea_set_one_line(ui_TextAreaConfigServoClosed, true);
@@ -1701,7 +1722,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_width(ui_TextAreaConfigServoOpen, 95);
     lv_obj_set_height(ui_TextAreaConfigServoOpen, LV_SIZE_CONTENT);    /// 70
     lv_obj_set_x(ui_TextAreaConfigServoOpen, -10);
-    lv_obj_set_y(ui_TextAreaConfigServoOpen, 185);
+    lv_obj_set_y(ui_TextAreaConfigServoOpen, 230);
     lv_obj_set_align(ui_TextAreaConfigServoOpen, LV_ALIGN_TOP_RIGHT);
     lv_textarea_set_placeholder_text(ui_TextAreaConfigServoOpen, "--");
     lv_textarea_set_one_line(ui_TextAreaConfigServoOpen, true);
@@ -1710,7 +1731,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_width(ui_ButtonPIN, 95);
     lv_obj_set_height(ui_ButtonPIN, 50);
     lv_obj_set_x(ui_ButtonPIN, 10);
-    lv_obj_set_y(ui_ButtonPIN, 230);
+    lv_obj_set_y(ui_ButtonPIN, 275);
     lv_obj_set_align(ui_ButtonPIN, LV_ALIGN_TOP_LEFT);
     lv_obj_add_flag(ui_ButtonPIN, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonPIN, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -1730,7 +1751,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_width(ui_ButtonConfigServoClose, 95);
     lv_obj_set_height(ui_ButtonConfigServoClose, 50);
     lv_obj_set_x(ui_ButtonConfigServoClose, 0);
-    lv_obj_set_y(ui_ButtonConfigServoClose, 230);
+    lv_obj_set_y(ui_ButtonConfigServoClose, 275);
     lv_obj_set_align(ui_ButtonConfigServoClose, LV_ALIGN_TOP_MID);
     lv_obj_add_flag(ui_ButtonConfigServoClose, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonConfigServoClose, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -1750,7 +1771,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_width(ui_ButtonConfigServoOpen, 95);
     lv_obj_set_height(ui_ButtonConfigServoOpen, 50);
     lv_obj_set_x(ui_ButtonConfigServoOpen, -10);
-    lv_obj_set_y(ui_ButtonConfigServoOpen, 230);
+    lv_obj_set_y(ui_ButtonConfigServoOpen, 275);
     lv_obj_set_align(ui_ButtonConfigServoOpen, LV_ALIGN_TOP_RIGHT);
     lv_obj_add_flag(ui_ButtonConfigServoOpen, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonConfigServoOpen, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -1765,6 +1786,8 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_style_text_color(ui_LabelConfigServoOpen, lv_color_hex(BB_FGCOLOR), LV_STATE_ANY);
     lv_obj_set_style_text_opa(ui_LabelConfigServoOpen, 255, LV_STATE_ANY);
     lv_obj_set_style_text_font(ui_LabelConfigServoOpen, &ui_font_UbuntuBoldItalic, 0);
+
+
 
     ui_LabelConfigPaymentMode = lv_label_create(ui_ScreenConfig);
     lv_obj_set_width(ui_LabelConfigPaymentMode, LV_SIZE_CONTENT);   /// 1
@@ -1801,13 +1824,16 @@ void ui_ScreenConfig_screen_init(void)
 
     // Drop Down for switching mode
     ui_DropdownConfigControlMode = lv_dropdown_create(ui_ScreenConfig);
-    lv_dropdown_set_options(ui_DropdownConfigControlMode, "None\nTime\nCredit");
+    lv_dropdown_set_options(ui_DropdownConfigControlMode, "None\nTime\nPulse");
     lv_obj_set_width(ui_DropdownConfigControlMode, 170);
     lv_obj_set_height(ui_DropdownConfigControlMode, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_DropdownConfigControlMode, -10);
     lv_obj_set_y(ui_DropdownConfigControlMode, 380);
     lv_obj_set_align(ui_DropdownConfigControlMode, LV_ALIGN_TOP_RIGHT);
     lv_obj_add_flag(ui_DropdownConfigControlMode, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
+
+   
+
 
     ui_ButtonConfigSave = lv_btn_create(ui_ScreenConfig);
     lv_obj_set_width(ui_ButtonConfigSave, 95);
@@ -2137,21 +2163,26 @@ void ui_init(void) {
 
 void IRAM_ATTR pulseCounter()
 {
-    ui_tap_remaining_credit--;
+    ui_tap_remaining_volume -= ui_tapConfig.getVolumePerUnit();
 }
 
 void ui_loop(void *parameters) {
     ui_tapConfig.load();
     network_restart(ui_tapConfig.getWiFiSSID(),ui_tapConfig.getWiFiPWD(),ui_tapConfig.getLNbitsHost(),ui_tapConfig.getDeviceID());
 
+    // initialise servo
     ui_servo = new Servo();
-    ui_servo->attach(5);
+    ui_servo->attach(SERVO_PIN);
     internal_tap_close();
 
-#define SENSOR 6
-    pinMode(SENSOR, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(SENSOR),pulseCounter, FALLING);
-    ui_tap_remaining_credit = 1000;
+    // initialise rela
+    pinMode(RELAY_PIN,OUTPUT);
+
+
+    // initialias Pulse input
+    pinMode(PULSE_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PULSE_PIN),pulseCounter, FALLING);
+
     while ( 1 == 1 ) {        
         if ( xSemaphoreTake(lvgl_sem,100) == pdTRUE ) {
             lv_task_handler();
@@ -2171,7 +2202,7 @@ void ui_loop(void *parameters) {
             xSemaphoreGive(lvgl_sem);            
         }        
 
-        Serial.println(ui_tap_remaining_credit);
+        Serial.println(ui_tap_remaining_volume);
         vTaskDelay(25);
     }
 }

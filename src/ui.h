@@ -23,7 +23,7 @@ bool ui_load_about_screen();
 bool ui_load_payment_screen(int amount, const char *currency);
 bool ui_init_switches(int num, const char *label[]);
 bool ui_display_qrcode(const char *s,int len);
-bool ui_add_tap_credit(int credit);
+bool ui_add_tap_volume(int credit);
 bool ui_payment_screen_active();
 
 

@@ -9,7 +9,7 @@
 
 #define CONTROL_MODE_NONE   0
 #define CONTROL_MODE_TIME   1
-#define CONTROL_MODE_CREDIT 2
+#define CONTROL_MODE_PULSE  2
 
 
 class TapConfig {
@@ -25,6 +25,7 @@ class TapConfig {
         int paymentMode;
         int controlMode;
         int backlight;
+        int volume_per_unit;
 
         bool bChanged;
     public:
@@ -44,6 +45,7 @@ class TapConfig {
         void setTapDuration(int i);
         void setPaymentMode(int i);
         void setBacklight(int i);
+        void setVolumePerUnit(int i);
 
         const char *getWiFiSSID();
         const char *getWiFiPWD();
@@ -55,6 +57,7 @@ class TapConfig {
         const char *getPIN();    
         int getTapDuration();
         int getPaymentMode();
+        int getVolumePerUnit();
 
         int getControlMode();
         void setControlMode(int i);

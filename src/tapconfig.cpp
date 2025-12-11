@@ -18,6 +18,7 @@
 #define PARTYTAP_CFG_MODE "mode"
 #define PARTYTAP_CFG_BACKLIGHT "backlight"
 #define PARTYTAP_CFG_CONTROL_MODE "control_mode"
+#define PARTYTAP_CFG_VOLUME_PER_UNIT "volume_per_unit"
 
 
 TapConfig::TapConfig() {
@@ -33,6 +34,7 @@ TapConfig::TapConfig() {
     this->paymentMode = PAYMENT_MODE_ONLINE;
     this->backlight = 100;
     this->controlMode = CONTROL_MODE_TIME;
+    this->volume_per_unit = 1;
 }
 
 TapConfig::TapConfig(TapConfig *src) {
@@ -47,6 +49,7 @@ TapConfig::TapConfig(TapConfig *src) {
     this->paymentMode = src->paymentMode;
     this->backlight = src->backlight;
     this->controlMode = src->controlMode;
+    this->volume_per_unit = src->volume_per_unit;
 }
 
 
@@ -91,6 +94,8 @@ bool TapConfig::load() {
             this->controlMode = obj["value"].as<int>();
         } else if ( name == PARTYTAP_CFG_BACKLIGHT ) {
             this->backlight = obj["value"].as<int>();
+        } else if ( name == PARTYTAP_CFG_VOLUME_PER_UNIT ) {
+            this->volume_per_unit = obj["value"].as<int>();
         }
       }
 
@@ -126,6 +131,8 @@ bool TapConfig::save() {
     doc[9]["value"] = this->backlight;
     doc[10]["name"] = PARTYTAP_CFG_CONTROL_MODE;
     doc[10]["value"] = this->controlMode;
+    doc[11]["name"] = PARTYTAP_CFG_VOLUME_PER_UNIT;
+    doc[11]["value"] = this->volume_per_unit;
 
     String output = "";
     serializeJson(doc, output);
@@ -169,6 +176,10 @@ void TapConfig::setTapDuration(int i) {
 
 void TapConfig::setBacklight(int i) {
     this->backlight = i;
+}
+
+void TapConfig::setVolumePerUnit(int i) {
+    this->volume_per_unit = i;
 }
 
 int TapConfig::getBacklight() {
@@ -221,4 +232,8 @@ void TapConfig::setControlMode(int i) {
 
 int TapConfig::getControlMode() {
     return this->controlMode;
+}
+
+int TapConfig::getVolumePerUnit() {
+    return this->volume_per_unit;
 }
