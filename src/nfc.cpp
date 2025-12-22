@@ -162,29 +162,30 @@ void nfc_loop(void *parameters)
             continue;
         }
 
-        ui_set_payment_message("READING NFC",5);
+        ui_queue_send_message(SHOW_MESSAGE_READING_NFC,5000);
+
 
         if ((uidLength != 7) && (uidLength != 4)) {
-            ui_set_payment_message("NFC READ ERROR",3);
+            ui_queue_send_message(SHOW_MESSAGE_NFC_READ_ERROR,3000);
             continue;
         }   
 
         if (!nfc->ntag424_isNTAG424()) {
-            ui_set_payment_message("NFC READ ERROR",3);
+            ui_queue_send_message(SHOW_MESSAGE_NFC_READ_ERROR,3000);
             continue;
         }
 
         uint8_t bytesread = nfc->ntag424_ISOReadFile(nfcbuffer,sizeof(nfcbuffer));
         nfcbuffer[bytesread] = 0;
         if (bytesread == 0 ) {
-            ui_set_payment_message("NO BYTES READ",3);
+           ui_queue_send_message(SHOW_MESSAGE_NFC_READ_ERROR,3000);
             continue;
         }
 
 
 
         if ( strncmp("lnurlw://",(char *)(nfcbuffer),9) != 0 ) {
-            ui_set_payment_message("INCORRECT LNURLW",3);
+            ui_queue_send_message(SHOW_MESSAGE_NFC_READ_ERROR,3000);
             continue;
         }
 

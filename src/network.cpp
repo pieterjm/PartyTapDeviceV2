@@ -12,6 +12,7 @@
 static SemaphoreHandle_t control_sem;
 
 
+
 String payment_request = "";
 String payment_hash = "";
 String payment_pin = "";
@@ -56,29 +57,18 @@ Task firmwareUpdateTask(TASK_SECOND, TASK_FOREVER, &firmwareUpdate);
 #define WS_EVENTTYPE_SWITCHES "switches"
 
 
-void internal_set_message(const char *s,int delay) {
-    ui_set_payment_message(s, delay);
-}
-
-
-
 // This function is triggered by a taskscheduler at the moment an invoice is requested
 // if the invoice is not received for some reason, the user is taken back to the 
 // start screen with a message that no invoice was received
 void checkInvoiceReceived() {
-#ifdef DEBUG
-  Serial.println("[checkInvoiceReceived]");
-#endif  
-    internal_set_message("NO INVOICE RECEIVED",3);
-    while ( ui_load_about_screen() == false ) {
-        vTaskDelay(200);
-    }
+    ui_queue_send_message(SHOW_MESSAGE_NO_INVOICE_RECEIVED,3000);
+    ui_queue_send_message(LOAD_ABOUT_SCREEN,0);
+
 }
 
 
 void ws_lnurlw_withdraw(const char *lnurlw) {
-    Serial.println("[ws_lnurlw_withdraw]");
-    internal_set_message("PROCESSING NFC PAYMENT",15);
+    ui_queue_send_message(SHOW_MESSAGE_PROCESSING_MFC_PAYMENT,15000);
     String wsmessage = PSTR("{\"event\":\"lnurlw\",\"payment_request\":\""); 
     wsmessage += payment_request;
     wsmessage += PSTR("\",\"lnurlw\":\"");
@@ -89,10 +79,7 @@ void ws_lnurlw_withdraw(const char *lnurlw) {
 
 // firmware update
 bool main_firmware_update() {
-    Serial.println("[main_firmware_update]");
-
     if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
-        Serial.println("[main_firmware_update] setting bDoFirmwareUpdate to true");
         bDoFirmwareUpdate = true;
         firmwareUpdateTask.restartDelayed(2000);
         xSemaphoreGive(control_sem);        
@@ -104,45 +91,42 @@ bool main_firmware_update() {
 }
 
 void firmwareUpdateFinished() {
-    ui_set_payment_message("RESTARTING",20000);
+    ui_queue_send_message(SHOW_MESSAGE_RESTARTING,0);
 }
 
 void firmwareUpdateProgress(int cur, int total) {
-  static char message[25];
-  snprintf_P(message, sizeof(message), PSTR("UPDATE PROGRESS %d%%"), 100 * cur / total);
-  ui_set_payment_message(message,10000);
-  Serial.println(message);
+    ui_queue_send_message(SHOW_MESSAGE_UPDATE_PROGRESS,100 * cur / total);
 }
 
 void firmwareUpdateError(int err) {
     Serial.printf("firmwareUpdateError %d\n",err);
     switch (err ) {
       case HTTP_UE_NO_PARTITION:
-        ui_set_payment_message("NO PARTITION",10000);
+        ui_queue_send_message(SHOW_MESSAGE_NO_PARTITION,0);
         break;
       case HTTP_UE_BIN_FOR_WRONG_FLASH:
-        ui_set_payment_message("WRONG FLASH",10000);
+        ui_queue_send_message(SHOW_MESSAGE_WRONG_FLASH,0);
         break;
       case HTTP_UE_BIN_VERIFY_HEADER_FAILED:
-        ui_set_payment_message("VERIFY FAILED",10000);
+        ui_queue_send_message(SHOW_MESSAGE_VERIFY_FAILED,0);
         break;
       case HTTP_UE_SERVER_FAULTY_MD5:
-        ui_set_payment_message("HASH ERROR",10000);
+        ui_queue_send_message(SHOW_MESSAGE_HASH_ERROR,0);
         break;
       case HTTP_UE_SERVER_WRONG_HTTP_CODE:
-        ui_set_payment_message("BAD SERVER RESPONSE",10000);      
+        ui_queue_send_message(SHOW_MESSAGE_BAD_SERVER_RESPONSE,0);      
         break;
       case HTTP_UE_SERVER_FORBIDDEN:
-        ui_set_payment_message("NOT ALLOWED",10000);
+        ui_queue_send_message(SHOW_MESSAGE_NOT_ALLOWED,0);
         break;
       case HTTP_UE_SERVER_FILE_NOT_FOUND:
-        ui_set_payment_message("FILE NOT FOUND",10000);
+        ui_queue_send_message(SHOW_MESSAGE_FILE_NOT_FOUND,0);
         break;
       case HTTP_UE_SERVER_NOT_REPORT_SIZE:
-        ui_set_payment_message("SIZE NOT REPORTED",10000);
+        ui_queue_send_message(SHOW_MESSAGE_SIZE_NOT_REPORTED,0);
         break;
       case HTTP_UE_TOO_LESS_SPACE:
-        ui_set_payment_message("NOT ENOUGH SPACE",10000);
+        ui_queue_send_message(SHOW_MESSAGE_NOT_ENOUGH_SPACE,0);
         break;
       default:
         break;
@@ -281,7 +265,7 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
 
 
                     // configure switches in the UI
-                    ui_init_switches();
+                    ui_queue_send_message(SHOW_PAYMENT_BUTTONS,0);
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_INVOICE) == 0 ) {
 
 
@@ -298,7 +282,7 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                         main_shared_lnurlw[0] = '\0';
                         main_shared_lnurlw_len = 0;                     
                     } else {
-                        ui_hide_payment_message();
+                        ui_queue_send_message(HIDE_MESSAGE,0);
                     }
                     
 
@@ -317,9 +301,7 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAID) == 0 ) {
                     tone_paid();
-                    internal_set_message("INVOICE PAID",3);
-
-
+                    ui_queue_send_message(SHOW_MESSAGE_INVOICE_PAID,3000);
                     // expiore the invoice
                     expireInvoiceTask.disable();
   
@@ -335,11 +317,8 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                         vTaskDelay(200);
                     }
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAYMENTFAILED) == 0 ) {   
-                    internal_set_message("PAYMENT FAILED",5);
+                    ui_queue_send_message(SHOW_MESSAGE_PAYMENT_FAILED,5000);
                     tone_paymentfailed();
-                    Serial.println("[ws_event] payment Failed");
-                   //tone_paymentfailed();
-                   // delay(200);
                 } else {
                     Serial.println("another");
                 }
@@ -367,7 +346,7 @@ void expireInvoice() {
     if ( ui_payment_screen_active() ) {
         Serial.println("[expireInvoice] TAP not in progress or payment screen is active") ;
         // navigate to the about screen
-        ui_load_about_screen();
+        ui_queue_send_message(LOAD_ABOUT_SCREEN,0);
     } else {
         Serial.println("[expireInvoice] payment screen is not active");
     }
@@ -435,7 +414,8 @@ void main_loop(void *parameters) {
 void event_nfc_data_read(const uint8_t *buffer,int num) {
     debug("event_nfc_data_read","");
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
-        internal_set_message("NFC READ",4);
+        ui_queue_send_message(SHOW_MESSAGE_NFC_READ_SUCCES,4000);
+
 
         // if there is an invoice availble, do the withdraw now, otherwise, requiest an invoice
         if ( payment_request.length() > 0 ) {           
@@ -469,7 +449,8 @@ void checkNetwork()
 {
     switch ( WiFi.status() ) {
         case WL_IDLE_STATUS:
-            internal_set_message("WIFI NOT CONNECTED",5);        
+            ui_queue_send_message(SHOW_MESSAGE_WIFI_NOT_CONNECTED,5000);
+            break;
         case WL_STOPPED:
             debug("checkNetwork","Starting WiFi");
             WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
@@ -480,8 +461,8 @@ void checkNetwork()
             if ( ! webSocket.isConnected() ) {
                 debug("checkNetwork","webSocket is not connected");
 
-                internal_set_message("NOT CONNECTED",3);
-                ui_hide_payment_buttons();
+                ui_queue_send_message(SHOW_MESSAGE_NOT_CONNECTED,3000);
+                ui_queue_send_message(HIDE_PAYMENT_BUTTONS,0);
 
                 webSocket.disconnect();
                 if (( config_lnbitshost.length() > 0 ) && ( config_wspath.length() > 0 )) {
