@@ -9,8 +9,6 @@
 #include "productconfig.h"
 #include <HTTPUpdate.h>
 
-static SemaphoreHandle_t control_sem;
-
 
 
 String payment_request = "";
@@ -21,6 +19,15 @@ int selected_product_id = 0;  // the ID of the selected product
 uint8_t main_shared_lnurlw[512];
 int main_shared_lnurlw_len = 0;
 
+TimerHandle_t networkStateReportTimer;
+TimerHandle_t networkCheckTimer;
+TimerHandle_t networkLoopTimer;
+TaskHandle_t networkTask_Handle;
+
+#define TASK_NOTIFICATION_NETWORK_STATE (1 << 1)
+#define TASK_NOTIFICATION_NETWORK_RESTART (1 << 2)
+#define TASK_NOTIFICATION_NETWORK_LOOP (1 << 3)
+#define TASK_NOTIFICATION_NETWORK_CHECK (1 << 4)
 
 
 bool bDoFirmwareUpdate = false;
@@ -31,20 +38,16 @@ bool bDoFirmwareUpdate = false;
 WebSocketsClient webSocket;
 
 
-
+// network configuration and the semaphore handle to change data
+SemaphoreHandle_t networkConfigSemaphore;
 String config_wifi_pwd = "";
 String config_wifi_ssid = "";
 String config_wspath = "";
 String config_lnbitshost = "";
 
-void checkNetwork();
-void reportState();
 void expireInvoice();
 void checkInvoiceReceived();
 void firmwareUpdate();
-Task checkNetworkTask(5 * TASK_SECOND, TASK_FOREVER,&checkNetwork);
-Task reportStateTask(2 * TASK_SECOND, TASK_FOREVER,&reportState);
-// Task tapProgressTask(TASK_IMMEDIATE, TASK_FOREVER, &updateTapProgress);
 Task expireInvoiceTask(TASK_IMMEDIATE,TASK_ONCE,&expireInvoice);
 Task checkInvoiceReceivedTask(TASK_IMMEDIATE, TASK_ONCE,&checkInvoiceReceived);
 Task firmwareUpdateTask(TASK_SECOND, TASK_FOREVER, &firmwareUpdate);
@@ -66,6 +69,12 @@ void checkInvoiceReceived() {
 
 }
 
+// report the state of wifi and websocket to the UI queue
+void networkReportState() {    
+    ui_queue_send_message(REPORT_WIFI_STATE,WiFi.status());
+    ui_queue_send_message(REPORT_WEBSOCKET_STATE, webSocket.isConnected());
+}
+
 
 void ws_lnurlw_withdraw(const char *lnurlw) {
     ui_queue_send_message(SHOW_MESSAGE_PROCESSING_MFC_PAYMENT,15000);
@@ -79,15 +88,9 @@ void ws_lnurlw_withdraw(const char *lnurlw) {
 
 // firmware update
 bool main_firmware_update() {
-    if ( xSemaphoreTake(control_sem,pdMS_TO_TICKS(1000)) == pdTRUE ) {
-        bDoFirmwareUpdate = true;
-        firmwareUpdateTask.restartDelayed(2000);
-        xSemaphoreGive(control_sem);        
-        return true;
-    }  else {
-        Serial.println("[main_firmware_update] failed to obtain semaphore");
-        return false;
-    }
+    bDoFirmwareUpdate = true;
+    firmwareUpdateTask.restartDelayed(2000);
+    return true;
 }
 
 void firmwareUpdateFinished() {
@@ -133,7 +136,6 @@ void firmwareUpdateError(int err) {
     }
 }
 
-
 void firmwareUpdate() {
     Serial.println("[firmwareUpdate]");
     static char firmware_path[200];    
@@ -143,8 +145,6 @@ void firmwareUpdate() {
     bDoFirmwareUpdate = false;
     
     Serial.println("[firmwareUpdate] after checks");
-    checkNetworkTask.disable();
-    reportStateTask.disable();
     webSocket.disableHeartbeat();
     webSocket.disconnect();
 
@@ -201,36 +201,41 @@ void ws_request_invoice(String switchid) {
 void main_get_invoice(int product) {
     int i;
 
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
-        selected_product_id = product;
+    selected_product_id = product;
 
-        String switchId = "";
-        if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {
-            switchId = productConfig.getProduct(selected_product_id)->getSwitchID();
-            xSemaphoreGive(productConfigSemaphore);        
-        }
-
-
-        ws_request_invoice(switchId);
-        xSemaphoreGive(control_sem);        
+    String switchId = "";
+    if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {
+        switchId = productConfig.getProduct(selected_product_id)->getSwitchID();
+        xSemaphoreGive(productConfigSemaphore);        
     }
+
+
+    ws_request_invoice(switchId);
 }
 
 // called from UI thread, so lock before accessing variables
 void network_restart(String wifi_ssid,String wifi_pwd,String lnbitshost,String deviceid) {
     debug("network_restart","Restarting network");
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
+    if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {
         config_wifi_ssid = wifi_ssid;
         config_wifi_pwd = wifi_pwd;
         config_lnbitshost = lnbitshost;
         config_wspath = "/partytap/api/v1/ws/" + deviceid;        
-        webSocket.setReconnectInterval(60000);
-        webSocket.disconnect();
-        WiFi.disconnect();
-        WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+        xSemaphoreGive(networkConfigSemaphore);
+    }
+}
+
+
+void internal_network_restart() {
+    webSocket.setReconnectInterval(60000);
+    webSocket.disconnect();
+    WiFi.disconnect();
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {
         WiFi.begin(config_wifi_ssid,config_wifi_pwd);
-        xSemaphoreGive(control_sem);        
-    } 
+        xSemaphoreGive(networkConfigSemaphore);
+    }
+
 }
 
 
@@ -312,10 +317,9 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     payment_request = "";
                     
                     int tap_volume = doc["payload"].as<int>();
-                    while ( ui_add_tap_volume(tap_volume) == false ) {
-                        debug("ws_event","Failed to add tap volume, retrying");
-                        vTaskDelay(200);
-                    }
+
+                    ui_queue_send_message(ADD_VOLUME,tap_volume);
+                    
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAYMENTFAILED) == 0 ) {   
                     ui_queue_send_message(SHOW_MESSAGE_PAYMENT_FAILED,5000);
                     tone_paymentfailed();
@@ -342,14 +346,6 @@ void expireInvoice() {
 #ifdef DEBUG
     Serial.println("[expireInvoice]");
 #endif
-    // Only go back to the about screen, if we're on the payment page
-    if ( ui_payment_screen_active() ) {
-        Serial.println("[expireInvoice] TAP not in progress or payment screen is active") ;
-        // navigate to the about screen
-        ui_queue_send_message(LOAD_ABOUT_SCREEN,0);
-    } else {
-        Serial.println("[expireInvoice] payment screen is not active");
-    }
 
     // expire the task    network_restart(ui_tapConfig.getWiFiSSID(),ui_tapConfig.getWiFiPWD(),ui_tapConfig.getLNbitsHost(),ui_tapConfig.getDeviceID());
 
@@ -362,10 +358,84 @@ void expireInvoice() {
 }
 
 
-void network_init() {
-    debug("network_init","Initializing network");
-    control_sem = xSemaphoreCreateMutex();
+// check the network and restart if needed
+// this task is executed by the task scheduler, which is already locked
+void network_check()
+{
+    switch ( WiFi.status() ) {
+        case WL_IDLE_STATUS:
+            ui_queue_send_message(SHOW_MESSAGE_WIFI_NOT_CONNECTED,5000);
+            break;
+        case WL_STOPPED:
+            debug("checkNetwork","Starting WiFi");
+            WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+
+            if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {
+                WiFi.begin(config_wifi_ssid,config_wifi_pwd);
+                xSemaphoreGive(networkConfigSemaphore);
+            }   
+            break;
+        case  WL_CONNECTED:
+            debug("checkNetwork","WL_CONNECTED");
+            if ( ! webSocket.isConnected() ) {
+                debug("checkNetwork","webSocket is not connected");
+
+                ui_queue_send_message(SHOW_MESSAGE_NOT_CONNECTED,3000);
+                ui_queue_send_message(HIDE_PAYMENT_BUTTONS,0);
+
+                webSocket.disconnect();
+
+                if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {
+                    if (( config_lnbitshost.length() > 0 ) && ( config_wspath.length() > 0 )) {
+                        debug("checkNetwork","Connecting websocket to %s%s",config_lnbitshost.c_str(),config_wspath.c_str());
+                        webSocket.beginSSL(config_lnbitshost,443, config_wspath);                
+                        webSocket.enableHeartbeat(5000,2000,1);
+                        webSocket.setReconnectInterval(500);
+                    } else {
+                        debug("checkNetwork","No websocket config, not connecting");
+                    }
+                    xSemaphoreGive(networkConfigSemaphore);
+                }
+            } else {
+                debug("checkNetwork","webSocket is connected");
+            }
+            break;
+        case WL_DISCONNECTED:
+            debug("checkNetwork","WiFi is not connected, reconnecting");
+            if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {
+                WiFi.begin(config_wifi_ssid,config_wifi_pwd);
+                xSemaphoreGive(networkConfigSemaphore);
+            }
+            break;
+        case WL_NO_SSID_AVAIL:
+            debug("check_network","SSID not available");
+            break;
+        default:
+            debug("check_network","Unknown WiFi status %d",WiFi.status());
+
+            break;
+    }
+
 }
+
+
+void network_state_report_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_NETWORK_STATE, eSetBits);
+}
+
+void network_check_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_NETWORK_CHECK, eSetBits);
+}
+
+void network_loop_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_NETWORK_LOOP, eSetBits);
+}
+
+
+
 
 void main_loop(void *parameters) {    
     debug("main_loop","Starting");
@@ -373,12 +443,9 @@ void main_loop(void *parameters) {
 
     Scheduler taskScheduler;
 
-    taskScheduler.addTask(checkNetworkTask);
-    taskScheduler.addTask(reportStateTask);
     taskScheduler.addTask(expireInvoiceTask);
     taskScheduler.addTask(firmwareUpdateTask);
 
-    reportStateTask.enable();
 
 
     webSocket.onEvent(ws_event);
@@ -388,23 +455,60 @@ void main_loop(void *parameters) {
 #ifdef DEBUG
     Serial.println("[main_loop] starting network task");
 #endif
-    checkNetworkTask.restart();
 
-    // when websocket hangs, ie when lnbits is broken. it may appear that the program is frozen
+    // create a timer for providing regular updates of the network state
+    networkStateReportTimer = xTimerCreate("network state report timer", pdMS_TO_TICKS(1000), pdTRUE, NULL, network_state_report_timer_cb);
+    if (!networkStateReportTimer)
+    {
+        debug("network_init", "Could not create network state report timer");
+    }
+
+    // create a timer to check the status of the network and the websocket
+    networkCheckTimer = xTimerCreate("network check timer", pdMS_TO_TICKS(5000), pdTRUE, NULL, network_check_timer_cb);
+    if (!networkCheckTimer)
+    {
+        debug("network_init", "Could not create network check timer");
+    }
+
+    // create a timer to check the status of the network and the websocket
+    networkLoopTimer = xTimerCreate("network loop timer", 100, pdTRUE, NULL, network_loop_timer_cb);
+    if (!networkLoopTimer)
+    {
+        debug("network_init", "Could not create network loop timer");
+    }
+
 
     while ( 1 == 1 ) {  
+        uint32_t ulNotifiedValue = 0;
 
-        if ( xSemaphoreTake(control_sem,200) == pdTRUE ) {
+        xTaskNotifyWait(0, 0xFFFFFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        // report the state of the network
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_STATE )
+        {
+            networkReportState();
+        }
+
+        // check the state of the network
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_CHECK )
+        {
+            network_check();
+        }
+
+        // restart the network
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_RESTART )
+        {
+            internal_network_restart();
+        }
+
+
+        // keep network processes up and running
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_LOOP )
+        {
             taskScheduler.execute();
-            xSemaphoreGive(control_sem);
+            webSocket.loop();        
         }
 
-        if ( xSemaphoreTake(control_sem,200) == pdTRUE ) {
-            webSocket.loop();
-            xSemaphoreGive(control_sem);
-        }
-            
-        vTaskDelay(100);
 
     }
 }
@@ -413,7 +517,6 @@ void main_loop(void *parameters) {
 // called when something succesfull was read from the NFC sensor
 void event_nfc_data_read(const uint8_t *buffer,int num) {
     debug("event_nfc_data_read","");
-    if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
         ui_queue_send_message(SHOW_MESSAGE_NFC_READ_SUCCES,4000);
 
 
@@ -436,114 +539,26 @@ void event_nfc_data_read(const uint8_t *buffer,int num) {
             ws_request_invoice(switchId);
         } 
         
-        xSemaphoreGive(control_sem);        
-    }    
 }
 
 
 
 
-// check the network and restart if needed
-// this task is executed by the task scheduler, which is already locked
-void checkNetwork()
-{
-    switch ( WiFi.status() ) {
-        case WL_IDLE_STATUS:
-            ui_queue_send_message(SHOW_MESSAGE_WIFI_NOT_CONNECTED,5000);
-            break;
-        case WL_STOPPED:
-            debug("checkNetwork","Starting WiFi");
-            WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
-            WiFi.begin(config_wifi_ssid,config_wifi_pwd);
-            break;
-        case  WL_CONNECTED:
-            debug("checkNetwork","WL_CONNECTED");
-            if ( ! webSocket.isConnected() ) {
-                debug("checkNetwork","webSocket is not connected");
 
-                ui_queue_send_message(SHOW_MESSAGE_NOT_CONNECTED,3000);
-                ui_queue_send_message(HIDE_PAYMENT_BUTTONS,0);
+void network_init() {
+    debug("network_init","Initializing network");
 
-                webSocket.disconnect();
-                if (( config_lnbitshost.length() > 0 ) && ( config_wspath.length() > 0 )) {
-                    debug("checkNetwork","Connecting websocket to %s%s",config_lnbitshost.c_str(),config_wspath.c_str());
-                    webSocket.beginSSL(config_lnbitshost,443, config_wspath);                
-                    webSocket.enableHeartbeat(5000,2000,1);
-                    webSocket.setReconnectInterval(500);
-                } else {
-                    debug("checkNetwork","No websocket config, not connecting");
-                }
-            } else {
-                debug("checkNetwork","webSocket is connected");
-            }
-            break;
-        case WL_DISCONNECTED:
-            debug("checkNetwork","WiFi is not connected, reconnecting");
-            WiFi.begin(config_wifi_ssid,config_wifi_pwd);
-            break;
-        case WL_NO_SSID_AVAIL:
-            debug("check_network","SSID (%s) not available",config_wifi_ssid.c_str());
-            break;
-        default:
-            debug("check_network","Unknown WiFi status %d",WiFi.status());
-
-            break;
-    }
-
-}
-
-// report state to the GUI process
-void reportState() {    
-    if ( ! ui_admin_screen_active() ) {
-        return;
-    }
-#ifdef DEBUG
-    Serial.println("[reportState]");
-#endif
-
-
-    int wifiState = WiFi.status();
-    switch ( wifiState ) {
-        case WL_CONNECTED:
-            ui_update_wifi_state("Connected");
-            break;
-        case WL_DISCONNECTED:
-            ui_update_wifi_state("Disconnected");
-            break;
-        case WL_IDLE_STATUS:
-            ui_update_wifi_state("Idle");
-            break;
-        case WL_STOPPED:
-            ui_update_wifi_state("Stopped");
-            break;
-        case WL_NO_SSID_AVAIL:
-            ui_update_wifi_state("SSID Unavailable");
-            break;
-        case WL_CONNECT_FAILED:
-            ui_update_wifi_state("Connection failed");
-            break;
-        case WL_CONNECTION_LOST:
-            ui_update_wifi_state("Connection lost");
-            break;
-    }
-    if ( webSocket.isConnected() ) {
-        ui_update_websocket_state("Connected");
+    if ( xTaskCreatePinnedToCore (
+        main_loop,     // Function to implement the task
+        "main_loop",   // Name of the task
+        10000,      // Stack size in bytes
+        NULL,      // Task input parameter
+        10,         // Priority of the task
+        &networkTask_Handle,      // Task handle.
+        0          // Core where the task should ru
+     ) ) {
+        debug("setup","network loop started");
     } else {
-        ui_update_websocket_state("Disconnected");
+        debug("setup","Failed to start network loop");
     }
-
-    String serverVersion = "";
-    String serverBranding = "";
-    
-    
-    if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {
-        serverVersion = productConfig.getServerVersion();
-        serverBranding = productConfig.getServerBranding();
-        xSemaphoreGive(productConfigSemaphore);        
-    }
-    
-    ui_update_server_version(serverVersion.c_str());
-    ui_update_server_branding(serverBranding.c_str());
 }
-
-

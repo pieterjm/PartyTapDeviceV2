@@ -30,8 +30,6 @@ ESP32I2SAudio audio(AUDIO_I2S_BCK_IO,AUDIO_I2S_LRCK_IO,AUDIO_I2S_DO_IO,AUDIO_I2S
 ROMBackgroundAudioWAV BMP(audio);
 
 TaskHandle_t nfcTask_Handle;
-TaskHandle_t lvglTask_Handle;
-TaskHandle_t controlTask_Handle;
 
 ProductConfig productConfig;
 SemaphoreHandle_t productConfigSemaphore;
@@ -109,36 +107,10 @@ void setup() {
     // Initialise UI
     ui_init();
 
-    // Start UI thread
-   if ( xTaskCreatePinnedToCore (
-        ui_loop,     // Function to implement the task
-        "ui_loop",   // Name of the task
-        10000,       //  Stack size in bytes
-        NULL,      // Task input parameter
-        5,         // Priority of the task
-        &lvglTask_Handle,      // Task handle.
-        1          // Core where the task should run
-      ) != pdPASS ) {
-        debug("setup","Failed to start UI thread");
-      }
 
 
 
 
-
-    if ( xTaskCreatePinnedToCore (
-        main_loop,     // Function to implement the task
-        "main_loop",   // Name of the task
-        10000,      // Stack size in bytes
-        NULL,      // Task input parameter
-        10,         // Priority of the task
-        &controlTask_Handle,      // Task handle.
-        0          // Core where the task should ru
-     ) ) {
-        debug("setup","network loop started");
-    } else {
-        debug("setup","Failed to start network loop");
-    }
 
 
     if ( ! nfc_init() ) {

@@ -11,6 +11,12 @@
 
 QueueHandle_t uiQueue = NULL;
 TimerHandle_t hideMessageTimer;
+TaskHandle_t lvglTask_Handle;
+
+#define TASK_NOTIFICATION_PULSE_MASK (0x0000FFFF)
+#define TASK_NOTIFICATION_LVGL (1 << 17)
+#define TASK_NOTIFICATION_PROGRESS (1 << 18)
+
 
 struct uiQueueMessage
 {
@@ -225,6 +231,16 @@ void internal_tap_resume()
     internal_tap_open();
 }
 
+void ui_load_screen(lv_obj_t *screen) {
+    if ( screen == ui_ScreenAdmin ) {
+        xTimerStart(networkStateReportTimer,10);
+    } else {
+        xTimerStop(networkStateReportTimer,10);
+    }
+    lv_disp_load_scr(screen);
+}
+
+
 // Tap progress
 // running in the main loop process, do not lock here
 void internal_update_tapprogress()
@@ -238,7 +254,7 @@ void internal_update_tapprogress()
         {
             if (ui_ScreenTap == lv_screen_active())
             {
-                lv_disp_load_scr(ui_ScreenAbout);
+                ui_load_screen(ui_ScreenAbout);
             }
             return;
         }
@@ -254,7 +270,7 @@ void internal_update_tapprogress()
         lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
         lv_obj_clear_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
-        lv_disp_load_scr(ui_ScreenTap);
+        ui_load_screen(ui_ScreenTap);
     }
     else if (!(lv_obj_is_visible(ui_BarTapProgress) && lv_obj_is_visible(ui_ButtonTapStart)))
     {
@@ -443,7 +459,7 @@ bool ui_display_qrcode(const char *s, int len)
 // navigate to the payment screen
 bool ui_load_payment_screen(int amount, const char *currency)
 {
-    lv_disp_load_scr(ui_ScreenPayment);
+    ui_load_screen(ui_ScreenPayment);
     lv_label_set_text_fmt(ui_LabelPaymentHeader, "PAY %d %s", amount, currency);
     return true;
 }
@@ -515,28 +531,6 @@ void show_payment_buttons()
     }
 }
 
-// return true if the current screen is the payment screen
-bool ui_payment_screen_active()
-{
-    bool b = false;
-    if (ui_ScreenPayment == lv_screen_active())
-    {
-        b = true;
-    }
-    return b;
-}
-
-// return true if the current screen is the admin screen
-bool ui_admin_screen_active()
-{
-    bool b = false;
-    if (ui_ScreenAdmin == lv_screen_active())
-    {
-        b = true;
-    }
-    return b;
-}
-
 // Close button on the config screen clicked
 void ui_event_button_config_servo_close_clicked(lv_event_t *e)
 {
@@ -554,7 +548,8 @@ void ui_event_button_config_servo_open_clicked(lv_event_t *e)
 // update button clicked
 void ui_event_button_config_update_clicked(lv_event_t *e)
 {
-    lv_disp_load_scr(ui_ScreenAbout);
+    ui_load_screen(ui_ScreenAbout);
+
     lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
@@ -570,7 +565,7 @@ void ui_event_button_config_update_clicked(lv_event_t *e)
 void ui_event_button_config_cancel_clicked(lv_event_t *e)
 {
     // make call to main to start updating
-    lv_disp_load_scr(ui_ScreenAdmin);
+    ui_load_screen(ui_ScreenAdmin);
 }
 
 // Button event to cancel config without saving changes
@@ -621,7 +616,7 @@ void ui_event_button_config_save_clicked(lv_event_t *e)
     network_restart(ui_tapConfig.getWiFiSSID(), ui_tapConfig.getWiFiPWD(), ui_tapConfig.getLNbitsHost(), ui_tapConfig.getDeviceID());
 
     // go back to the admin screen
-    lv_disp_load_scr(ui_ScreenAdmin);
+    ui_load_screen(ui_ScreenAdmin);
 }
 
 // pPIN button on the config clicked
@@ -671,7 +666,8 @@ void ui_event_keyboard_config_ready(lv_event_t *e)
 void ui_event_PanelAboutHeaderClicked(lv_event_t *e)
 {
     lv_label_set_text(ui_LabelPinHeader, "ENTER PIN");
-    lv_disp_load_scr(ui_ScreenPin);
+    ui_load_screen(ui_ScreenPin);
+
 }
 
 //  Button clicked on the selection screen
@@ -685,7 +681,7 @@ void ui_event_ButtonAboutClicked(lv_event_t *e)
     if (bFreeDrink)
     {
         bFreeDrink = false;
-        lv_disp_load_scr(ui_ScreenTap);
+        ui_load_screen(ui_ScreenTap);
     }
     else
     {
@@ -707,7 +703,7 @@ void ui_event_ButtonPinCancelClicked(lv_event_t *e)
     }
     else
     {
-        lv_disp_load_scr(ui_ScreenAbout);
+        ui_load_screen(ui_ScreenAbout);
     }
 }
 
@@ -739,8 +735,8 @@ void ui_event_ButtonPinOKClicked(lv_event_t *e)
         // reset the message
         lv_label_set_text(ui_LabelPinMessage, "ENTER PIN");
 
-        // Load the config screen
-        lv_disp_load_scr(ui_ScreenAdmin);
+        // start the update timer
+        ui_load_screen(ui_ScreenAdmin);
     }
     else
     {
@@ -793,12 +789,12 @@ void ui_event_ButtonTapStartClicked(lv_event_t *e)
 void ui_event_ButtonPaymentCancelClicked(lv_event_t *e)
 {
     lv_obj_add_flag(ui_PanelAboutMessage, LV_OBJ_FLAG_HIDDEN);
-    lv_disp_load_scr(ui_ScreenAbout);
+    ui_load_screen(ui_ScreenAbout);
 }
 
 void ui_event_ButtonPaymentEnterPinClicked(lv_event_t *e)
 {
-    lv_disp_load_scr(ui_ScreenPin);
+    ui_load_screen(ui_ScreenPin);
 }
 
 void ui_event_button_admin_open_clicked(lv_event_t *e)
@@ -821,7 +817,7 @@ void ui_event_button_admin_free_clicked(lv_event_t *e)
 {
     bFreeDrink = true;
     lv_obj_add_flag(ui_PanelAboutMessage, LV_OBJ_FLAG_HIDDEN);
-    lv_disp_load_scr(ui_ScreenAbout);
+    ui_load_screen(ui_ScreenAbout);
 }
 
 // get the current config and go to the config screen
@@ -843,13 +839,14 @@ void ui_event_ButtonAdminConfigClicked(lv_event_t *e)
     lv_dropdown_set_selected(ui_DropdownConfigControlMode, ui_tapConfig.getControlMode());
     lv_dropdown_set_selected(ui_DropdownConfigPaymentMode, ui_tapConfig.getPaymentMode());
 
-    lv_disp_load_scr(ui_ScreenConfig);
+    ui_load_screen(ui_ScreenConfig);
+
 }
 
 // cancel or Done button clicked on the admin screen navigates back to about
 void ui_event_ButtonAdminCancelClicked(lv_event_t *e)
 {
-    lv_disp_load_scr(ui_ScreenAbout);
+    ui_load_screen(ui_ScreenAbout);
 }
 
 // Initialize the screen that controls and displays the Tap process
@@ -2151,12 +2148,73 @@ void ui_hide_message_timer_cb(TimerHandle_t timer)
     ui_queue_send_message(HIDE_MESSAGE, 0);
 }
 
-void ui_init(void)
+
+void IRAM_ATTR pulseCounter()
 {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xTaskNotifyFromISR(lvglTask_Handle, 1, eIncrement, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void ui_lvgl_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(lvglTask_Handle, TASK_NOTIFICATION_LVGL, eSetBits);
+}
+
+void ui_progress_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(lvglTask_Handle, TASK_NOTIFICATION_PROGRESS, eSetBits);
+}
+
+
+void ui_loop(void *parameters)
+{
+    ui_tapConfig.load();
+    network_restart(ui_tapConfig.getWiFiSSID(), ui_tapConfig.getWiFiPWD(), ui_tapConfig.getLNbitsHost(), ui_tapConfig.getDeviceID());
+
+    // initialise servo
+    ui_servo = new Servo();
+    ui_servo->attach(SERVO_PIN);
+    internal_tap_close();
+
+    // initialise rela
+    pinMode(RELAY_PIN, OUTPUT);
+
+    // initialias Pulse input
+    pinMode(PULSE_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PULSE_PIN), pulseCounter, FALLING);
+    struct uiQueueMessage msg;
+
 
     // create queue for added volume
     uiQueue = xQueueCreate(5, sizeof(uiQueueMessage));
+    if (uiQueue == NULL)
+    {
+        debug("ui_loop", "failed to created uiQueue");
+    }
 
+    // LVGL timer
+    TimerHandle_t lvglTimer = xTimerCreate("LVGL timer", 25, pdTRUE, NULL, ui_lvgl_timer_cb);
+    if (lvglTimer)
+    {
+        xTimerStart(lvglTimer, 0);
+    }
+    else
+    {
+        Serial.println("[ui_loop] Failed to create lvglTimer");
+    }
+
+    // progress bar timer
+    TimerHandle_t progressTimer = xTimerCreate("Progress timer", pdMS_TO_TICKS(UI_TAP_PROGRESS_INTERVAL), pdTRUE, NULL, ui_progress_timer_cb);
+    if (progressTimer)
+    {
+        xTimerStart(progressTimer, 0);
+    }
+    else
+    {
+        Serial.println("[ui_loop] Failed to create progressTimer");
+    }
+ 
     // create a timer for hiding messages after a timeout controlled by this timer
     hideMessageTimer = xTimerCreate("hide message timer", 10, pdFALSE, NULL, ui_hide_message_timer_cb);
     if (!hideMessageTimer)
@@ -2164,10 +2222,95 @@ void ui_init(void)
         debug("ui_loop", "Could not create hide message timer");
     }
 
-    if (uiQueue == NULL)
+
+
+
+
+    while (1 == 1)
     {
-        debug("ui_loop", "failed to created volumeQueue");
+        uint32_t ulNotifiedValue = 0;
+
+        xTaskNotifyWait(0, 0xFFFFFFFF, &ulNotifiedValue, portMAX_DELAY);
+
+        // check for pulses
+        uint32_t flowValue = ulNotifiedValue & TASK_NOTIFICATION_PULSE_MASK;
+        if (flowValue > 0)
+        {
+            ui_tap_remaining_volume -= flowValue; // * ui_tapConfig.getVolumePerUnit();
+            if (ui_tap_remaining_volume <= 0)
+            {
+                ui_tap_remaining_volume = 0;
+            }
+        }
+
+        // check the queue
+        if (xQueueReceive(uiQueue, &msg, 10))
+        {
+            switch (msg.type)
+            {
+            case ADD_VOLUME:
+                ui_tap_remaining_volume += msg.data;
+                break;
+            case SHOW_PAYMENT_BUTTONS:
+                show_payment_buttons();
+                break;
+            case HIDE_PAYMENT_BUTTONS:
+                hide_payment_buttons();
+                break;
+            case LOAD_ABOUT_SCREEN:
+                ui_load_screen(ui_ScreenAbout);
+                break;
+            case HIDE_MESSAGE:
+                lv_obj_add_flag(ui_PanelPaymentMessage, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(ui_PanelAboutMessage, LV_OBJ_FLAG_HIDDEN);
+                break;
+            case SHOW_MESSAGE_BAD_SERVER_RESPONSE:
+            case SHOW_MESSAGE_CREATING_INVOICE:
+            case SHOW_MESSAGE_FILE_NOT_FOUND:
+            case SHOW_MESSAGE_HASH_ERROR:
+            case SHOW_MESSAGE_INVALID_CARD:
+            case SHOW_MESSAGE_INVOICE_PAID:
+            case SHOW_MESSAGE_NFC_READ_ERROR:
+            case SHOW_MESSAGE_NFC_READ_SUCCES:
+            case SHOW_MESSAGE_NO_INVOICE_RECEIVED:
+            case SHOW_MESSAGE_NO_PARTITION:
+            case SHOW_MESSAGE_NOT_ALLOWED:
+            case SHOW_MESSAGE_NOT_CONNECTED:
+            case SHOW_MESSAGE_NOT_ENOUGH_SPACE:
+            case SHOW_MESSAGE_PAYMENT_FAILED:
+            case SHOW_MESSAGE_PROCESSING_MFC_PAYMENT:
+            case SHOW_MESSAGE_READING_NFC:
+            case SHOW_MESSAGE_RESTARTING:
+            case SHOW_MESSAGE_SIZE_NOT_REPORTED:
+            case SHOW_MESSAGE_UPDATE_PROGRESS:
+            case SHOW_MESSAGE_VERIFY_FAILED:
+            case SHOW_MESSAGE_WEBSOCKET_NOT_CONNECTED:
+            case SHOW_MESSAGE_WIFI_NOT_CONNECTED:
+            case SHOW_MESSAGE_WRONG_FLASH:
+                set_message(msg);
+                break;
+            default:
+                break;
+            }
+        }
+
+        // update tap progress
+        if (ulNotifiedValue & TASK_NOTIFICATION_PROGRESS)
+        {
+            internal_update_tapprogress();
+        }
+
+        // general lvgl handler
+        if (ulNotifiedValue & TASK_NOTIFICATION_LVGL)
+        {
+            lv_task_handler();
+            gfx->flush();
+        }
     }
+}
+
+void ui_init(void)
+{
 
     // Display setup
     if (!gfx->begin(40000000UL))
@@ -2240,91 +2383,19 @@ void ui_init(void)
     ui_ScreenTap_screen_init();
 
     lv_disp_load_scr(ui_ScreenAbout);
-}
 
-void IRAM_ATTR pulseCounter()
-{
-    ui_tap_remaining_volume -= ui_tapConfig.getVolumePerUnit();
-}
-
-void ui_loop(void *parameters)
-{
-    ui_tapConfig.load();
-    network_restart(ui_tapConfig.getWiFiSSID(), ui_tapConfig.getWiFiPWD(), ui_tapConfig.getLNbitsHost(), ui_tapConfig.getDeviceID());
-
-    // initialise servo
-    ui_servo = new Servo();
-    ui_servo->attach(SERVO_PIN);
-    internal_tap_close();
-
-    // initialise rela
-    pinMode(RELAY_PIN, OUTPUT);
-
-    // initialias Pulse input
-    pinMode(PULSE_PIN, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(PULSE_PIN), pulseCounter, FALLING);
-    struct uiQueueMessage msg;
-
-    while (1 == 1)
-    {
-        lv_task_handler();
-        gfx->flush();
-
-        if (xQueueReceive(uiQueue, &msg, 10))
-        {
-            switch (msg.type)
-            {
-            case SHOW_PAYMENT_BUTTONS:
-                show_payment_buttons();
-                break;
-            case HIDE_PAYMENT_BUTTONS:
-                hide_payment_buttons();
-                break;
-            case LOAD_ABOUT_SCREEN:
-                lv_disp_load_scr(ui_ScreenAbout);
-                break;
-            case HIDE_MESSAGE:
-                lv_obj_add_flag(ui_PanelPaymentMessage, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(ui_PanelAboutMessage, LV_OBJ_FLAG_HIDDEN);
-                break;
-            case SHOW_MESSAGE_BAD_SERVER_RESPONSE:
-            case SHOW_MESSAGE_CREATING_INVOICE:
-            case SHOW_MESSAGE_FILE_NOT_FOUND:
-            case SHOW_MESSAGE_HASH_ERROR:
-            case SHOW_MESSAGE_INVALID_CARD:
-            case SHOW_MESSAGE_INVOICE_PAID:
-            case SHOW_MESSAGE_NFC_READ_ERROR:
-            case SHOW_MESSAGE_NFC_READ_SUCCES:
-            case SHOW_MESSAGE_NO_INVOICE_RECEIVED:
-            case SHOW_MESSAGE_NO_PARTITION:
-            case SHOW_MESSAGE_NOT_ALLOWED:
-            case SHOW_MESSAGE_NOT_CONNECTED:
-            case SHOW_MESSAGE_NOT_ENOUGH_SPACE:
-            case SHOW_MESSAGE_PAYMENT_FAILED:
-            case SHOW_MESSAGE_PROCESSING_MFC_PAYMENT:
-            case SHOW_MESSAGE_READING_NFC:
-            case SHOW_MESSAGE_RESTARTING:
-            case SHOW_MESSAGE_SIZE_NOT_REPORTED:
-            case SHOW_MESSAGE_UPDATE_PROGRESS:
-            case SHOW_MESSAGE_VERIFY_FAILED:
-            case SHOW_MESSAGE_WEBSOCKET_NOT_CONNECTED:
-            case SHOW_MESSAGE_WIFI_NOT_CONNECTED:
-            case SHOW_MESSAGE_WRONG_FLASH:
-                set_message(msg);
-                break;
-            default:
-                break;
-            }
-        }
-
-        unsigned long currentTime = millis();
-
-        if (currentTime - previousRunTime >= UI_TAP_PROGRESS_INTERVAL)
-        {
-            previousRunTime = currentTime;
-            internal_update_tapprogress();
-        }
-
-        vTaskDelay(25);
+    // Start UI thread
+    if ( xTaskCreatePinnedToCore (
+        ui_loop,     // Function to implement the task
+        "ui_loop",   // Name of the task
+        10000,       //  Stack size in bytes
+        NULL,      // Task input parameter
+        5,         // Priority of the task
+        &lvglTask_Handle,      // Task handle.
+        1          // Core where the task should run
+    ) != pdPASS ) {
+        debug("setup","Failed to start UI thread");
     }
+
+
 }
