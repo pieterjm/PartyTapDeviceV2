@@ -11,13 +11,14 @@
 #define PRODUCT_CONFIG_AMOUNT "amount"
 #define PRODUCT_CONFIG_CURRENCY "currency"
 
+
+
 #define STR1(x)  #x
 #define STR(x)  STR1(x)    
 
 ProductConfig::ProductConfig() {
     this->numProducts = 0;
     this->key = "0000111122224444";
-
     // the extension version of the PartyTap extension at the server. If no version is provided, it is assumed that this is the version
     this->serverVersion = "";
     this->serverBranding = "";

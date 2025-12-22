@@ -33,7 +33,9 @@ TaskHandle_t nfcTask_Handle;
 TaskHandle_t lvglTask_Handle;
 TaskHandle_t controlTask_Handle;
 
-
+ProductConfig productConfig;
+SemaphoreHandle_t productConfigSemaphore;
+        
 
 void debug(const char *function,const char *format, ...) {
 #ifdef DEBUG

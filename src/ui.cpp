@@ -9,10 +9,17 @@
 #include "network.h"
 #include <ESP32Servo.h>
 
-static SemaphoreHandle_t lvgl_sem;
-TapConfig ui_tapConfig;
+
+QueueHandle_t uiQueue = NULL;
+struct uiQueueMessage
+{
+    uint8_t id;
+    uint16_t data;
+};
+
 String ui_PinEnteredPin = ""; // The actual entered PIN on the PIN Screen
 String ui_PinHidePin = ""; // a string of stars displayed on the screen
+TapConfig ui_tapConfig;
 unsigned long ui_message_millis = 0; // millis when a message has been set
 bool bFreeDrink = false;
 Servo *ui_servo;
@@ -288,54 +295,33 @@ bool internal_verify_pin(String entered_pin) {
 
 
 bool ui_add_tap_volume(int volume) {
-    if ( xSemaphoreTake(lvgl_sem,200) == pdTRUE ) {
-        ui_tap_remaining_volume += volume;        
-        lv_bar_set_range(ui_BarTapProgress,0,ui_tap_remaining_volume);
-        xSemaphoreGive(lvgl_sem);            
-        return true;
-    }
-    return false;
+    ui_tap_remaining_volume += volume;
+    lv_bar_set_range(ui_BarTapProgress, 0, ui_tap_remaining_volume);
+    return true;
 }
-
 
 // update the state of the websocket in the admin screen
 bool ui_update_websocket_state(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
-        lv_label_set_text_fmt(ui_LabelAdminWebSocketStatus,"WebSocket Status: %s",s);
-        xSemaphoreGive(lvgl_sem);            
-        return true;
-    } 
-    return false;
+    lv_label_set_text_fmt(ui_LabelAdminWebSocketStatus, "WebSocket Status: %s", s);
+    return true;
 }
 
 // update the status string of the wifi connection in the admin screeen
 bool ui_update_wifi_state(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
-        lv_label_set_text_fmt(ui_LabelAdminWiFiStatus,"WiFi Status: %s",s);
-        xSemaphoreGive(lvgl_sem);            
-        return true;
-    }    
-    return false;
+    lv_label_set_text_fmt(ui_LabelAdminWiFiStatus, "WiFi Status: %s", s);
+    return true;
 }
 
 // update the server version string in the admin screen
 bool ui_update_server_version(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,300) == pdTRUE ) {
-        lv_label_set_text_fmt(ui_LabelAdminServerVersion,"Server version: %s",s);
-        xSemaphoreGive(lvgl_sem);   
-        return true;         
-    }
-    return false;
+    lv_label_set_text_fmt(ui_LabelAdminServerVersion, "Server version: %s", s);
+    return true;
 }
 
 // update the server branding in the admin screen
 bool ui_update_server_branding(const char *s) {
-    if ( xSemaphoreTake(lvgl_sem,200) == pdTRUE ) {
-        lv_label_set_text_fmt(ui_LabelAdminBranding,"Server branding: %s",s);
-        xSemaphoreGive(lvgl_sem);            
-        return true;
-    }
-    return false;
+    lv_label_set_text_fmt(ui_LabelAdminBranding, "Server branding: %s", s);
+    return true;
 }
 
 void internal_set_payment_message(const char *s,int delay) {
@@ -348,14 +334,9 @@ void internal_set_payment_message(const char *s,int delay) {
 
 // set the message of the payment status on the payment screen
 bool ui_set_payment_message(const char *s,int delay) {
-    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
-        internal_set_payment_message(s,delay);
-        xSemaphoreGive(lvgl_sem);            
-        return false;
-    }            
+    internal_set_payment_message(s, delay);
     return true;
 }
-
 
 void internal_hide_payment_message() {
     ui_message_millis = 0;
@@ -364,139 +345,121 @@ void internal_hide_payment_message() {
 }
 
 bool ui_hide_payment_message() {
-    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
-        internal_hide_payment_message();
-        xSemaphoreGive(lvgl_sem);   
-        return true;         
-    }
-    return false;
+    internal_hide_payment_message();
+    return true;
 }
 
 // display the qr code on the payment screen
 bool ui_display_qrcode(const char *s,int len) {
-    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
-        lv_obj_clear_flag(ui_QrcodePayment, LV_OBJ_FLAG_HIDDEN);
-        lv_qrcode_update(ui_QrcodePayment, s, len);
-        xSemaphoreGive(lvgl_sem);        
-        return true;
-    }
-    return false;
+    lv_obj_clear_flag(ui_QrcodePayment, LV_OBJ_FLAG_HIDDEN);
+    lv_qrcode_update(ui_QrcodePayment, s, len);
+    return true;
 }
 
 // navigate to the payment screen
 bool ui_load_payment_screen(int amount, const char *currency) {
-    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
-        lv_disp_load_scr(ui_ScreenPayment);        
-        lv_label_set_text_fmt(ui_LabelPaymentHeader,"PAY %d %s",amount,currency);
-        xSemaphoreGive(lvgl_sem);        
-        return true;
-    }
-    return false;
+    lv_disp_load_scr(ui_ScreenPayment);
+    lv_label_set_text_fmt(ui_LabelPaymentHeader, "PAY %d %s", amount, currency);
+    return true;
 }
 
-
 bool ui_hide_payment_buttons() {
-    if ( xSemaphoreTake(lvgl_sem,300) == pdTRUE ) {
-        lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
-        xSemaphoreGive(lvgl_sem);        
-        return true;
-    }
-    return false;
+    lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+    return true;
 }
 
 // initialise buttons on the about page
-bool ui_init_switches(int num,const char *label[]) {
+bool ui_init_switches() {
+    struct uiQueueMessage msg;
+    msg.id = UIQUEUE_INIT_PAYMENT_BUTTONS;
+    msg.data = 0;
+    return xQueueSend(uiQueue, &msg, portMAX_DELAY);
+}
+
+void internal_init_payment_buttons() {
 #ifdef DEBUG    
     Serial.println("[ui_init_switches]");
 #endif
 
-    if ( xSemaphoreTake(lvgl_sem,700) == pdTRUE ) {
-        switch ( num ) {
-            case 1:
-                lv_obj_clear_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
-                lv_label_set_text(ui_LabelAboutOne,label[0]);
-                lv_obj_set_width(ui_ButtonAboutOne, 256);
-                lv_obj_set_x(ui_ButtonAboutOne, 0);
-                break;
-            case 2:
-                lv_obj_clear_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_clear_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
-                lv_label_set_text(ui_LabelAboutOne,label[0]);
-                lv_label_set_text(ui_LabelAboutTwo,label[1]);
-                lv_obj_set_x(ui_ButtonAboutOne, -70);
-                lv_obj_set_x(ui_ButtonAboutTwo, 70);
-                lv_obj_set_width(ui_ButtonAboutOne, 120);
-                lv_obj_set_width(ui_ButtonAboutTwo, 120);
-                break;
-            case 3:
-                lv_obj_clear_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_clear_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_clear_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
-                lv_label_set_text(ui_LabelAboutOne,label[0]);
-                lv_label_set_text(ui_LabelAboutTwo,label[1]);
-                lv_label_set_text(ui_LabelAboutThree,label[2]);
-                lv_obj_set_x(ui_ButtonAboutOne, -105);
-                lv_obj_set_x(ui_ButtonAboutTwo, 0);
-                lv_obj_set_x(ui_ButtonAboutThree, 105);
-                lv_obj_set_width(ui_ButtonAboutOne, 100);
-                lv_obj_set_width(ui_ButtonAboutTwo, 100);
-                lv_obj_set_width(ui_ButtonAboutThree, 100);
-                break;
-            default:
-                lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(ui_ButtonAboutTwo,LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(ui_ButtonAboutThree,LV_OBJ_FLAG_HIDDEN);
-                break;
-        }        
-        xSemaphoreGive(lvgl_sem);        
-        return true;
+    if (xSemaphoreTake(productConfigSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        switch (productConfig.getNumProducts())
+        {
+        case 1:
+            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
+            lv_obj_set_width(ui_ButtonAboutOne, 256);
+            lv_obj_set_x(ui_ButtonAboutOne, 0);
+            break;
+        case 2:
+            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
+            lv_label_set_text(ui_LabelAboutTwo, productConfig.getProduct(1)->getLabel());
+            lv_obj_set_x(ui_ButtonAboutOne, -70);
+            lv_obj_set_x(ui_ButtonAboutTwo, 70);
+            lv_obj_set_width(ui_ButtonAboutOne, 120);
+            lv_obj_set_width(ui_ButtonAboutTwo, 120);
+            break;
+        case 3:
+            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
+            lv_label_set_text(ui_LabelAboutTwo, productConfig.getProduct(1)->getLabel());
+            lv_label_set_text(ui_LabelAboutThree, productConfig.getProduct(2)->getLabel());
+            lv_obj_set_x(ui_ButtonAboutOne, -105);
+            lv_obj_set_x(ui_ButtonAboutTwo, 0);
+            lv_obj_set_x(ui_ButtonAboutThree, 105);
+            lv_obj_set_width(ui_ButtonAboutOne, 100);
+            lv_obj_set_width(ui_ButtonAboutTwo, 100);
+            lv_obj_set_width(ui_ButtonAboutThree, 100);
+            break;
+        default:
+            lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            break;
+        }
+        xSemaphoreGive(productConfigSemaphore);
     }
-    return false;
 }
 
 // return true if the current screen is the payment screen
 bool ui_payment_screen_active() {
     bool b = false;
-    if ( xSemaphoreTake(lvgl_sem,400) == pdTRUE ) {
-        if ( ui_ScreenPayment == lv_screen_active() ) {
-            b = true;
-        }
-        xSemaphoreGive(lvgl_sem);        
-    }    
+    if (ui_ScreenPayment == lv_screen_active())
+    {
+        b = true;
+    }
     return b;
 }
 
 // return true if the current screen is the admin screen
 bool ui_admin_screen_active() {
     bool b = false;
-    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
-        if ( ui_ScreenAdmin == lv_screen_active() ) {
-            b = true;
-        }
-        xSemaphoreGive(lvgl_sem);        
-    }    
+    if (ui_ScreenAdmin == lv_screen_active())
+    {
+        b = true;
+    }
     return b;
 }
 
 // open the about screen
 bool ui_load_about_screen() {
-    if ( xSemaphoreTake(lvgl_sem,500) == pdTRUE ) {
-        lv_disp_load_scr(ui_ScreenAbout);        
-        xSemaphoreGive(lvgl_sem);   
-        return true;     
-    }
-    return false;
+    lv_disp_load_scr(ui_ScreenAbout);
+    return true;
 }
-
 // from here down are the ui events
 
 // Close button on the config screen clicked
-void ui_event_button_config_servo_close_clicked(lv_event_t *e) {
+void ui_event_button_config_servo_close_clicked(lv_event_t *e)
+{
     int value = atoi(lv_textarea_get_text(ui_TextAreaConfigServoClosed));
     internal_servo_write(value);
 }
@@ -797,25 +760,23 @@ void ui_ScreenTap_screen_init(void) {
     lv_obj_set_style_text_opa(ui_LabelTapInstructions, 255,LV_STATE_ANY);
     lv_obj_set_style_text_font(ui_LabelTapInstructions, &ui_font_UbuntuBoldItalic,LV_STATE_ANY);
 
-
     ui_BarTapProgress = lv_bar_create(ui_ScreenTap);
     lv_bar_set_range(ui_BarTapProgress,0,10);
     lv_bar_set_value(ui_BarTapProgress, 0, LV_ANIM_OFF);
     lv_obj_set_width(ui_BarTapProgress, 260);
     lv_obj_set_height(ui_BarTapProgress, 10);    
-    //lv_obj_set_x(ui_BarTapProgress, 0);
-    lv_obj_set_y(ui_BarTapProgress, -20);
     lv_obj_set_align(ui_BarTapProgress, LV_ALIGN_BOTTOM_MID);
-    lv_obj_set_style_bg_color(ui_BarTapProgress, lv_color_hex(BB_FGCOLOR),LV_STATE_ANY);
-    lv_obj_set_style_bg_opa(ui_BarTapProgress, 255,LV_STATE_ANY);
-    lv_obj_set_style_border_color(ui_BarTapProgress, lv_color_hex(BB_FGCOLOR),LV_STATE_ANY);
-    lv_obj_set_style_border_opa(ui_BarTapProgress, 255,LV_STATE_ANY);
-    lv_obj_set_style_border_width(ui_BarTapProgress, 2,LV_STATE_ANY);
+    lv_obj_set_y(ui_BarTapProgress, -20);
+    lv_obj_set_style_bg_color(ui_BarTapProgress, lv_color_hex(BB_FGCOLOR),LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_BarTapProgress, 255,LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_BarTapProgress, lv_color_hex(BB_FGCOLOR),LV_STATE_DEFAULT);
+    lv_obj_set_style_border_opa(ui_BarTapProgress, 255,LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ui_BarTapProgress, 2,LV_STATE_DEFAULT);
     //lv_obj_set_style_radius(ui_BarTapProgress,0,LV_PART_ANY);
     
     lv_obj_add_flag(ui_BarTapProgress,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(ui_BarTapProgress, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
-    lv_obj_set_style_bg_opa(ui_BarTapProgress, 255, LV_STATE_ANY);
+    lv_obj_set_style_bg_color(ui_BarTapProgress, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_BarTapProgress, 255, LV_STATE_DEFAULT);
 
     ui_ButtonTapStart = lv_btn_create(ui_ScreenTap);
     lv_obj_set_width(ui_ButtonTapStart, 260);
@@ -1347,10 +1308,10 @@ void ui_ScreenAbout_screen_init(void)
     lv_obj_set_width(ui_PanelAboutHeader, gfx->width());
     lv_obj_set_height(ui_PanelAboutHeader, 50);
     lv_obj_clear_flag(ui_PanelAboutHeader, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_obj_set_style_radius(ui_PanelAboutHeader, 0, LV_STATE_ANY);
-    lv_obj_set_style_bg_color(ui_PanelAboutHeader, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
-    lv_obj_set_style_bg_opa(ui_PanelAboutHeader, 255, LV_STATE_ANY);
-    lv_obj_set_style_border_width(ui_PanelAboutHeader, 0, LV_STATE_ANY);
+    lv_obj_set_style_radius(ui_PanelAboutHeader, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_PanelAboutHeader, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_PanelAboutHeader, 255, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ui_PanelAboutHeader, 0, LV_STATE_DEFAULT);
 
     ui_LabelAboutHeader = lv_label_create(ui_PanelAboutHeader);
     lv_obj_set_width(ui_LabelAboutHeader, LV_SIZE_CONTENT);   /// 1
@@ -1402,7 +1363,7 @@ void ui_ScreenAbout_screen_init(void)
     lv_obj_set_y(ui_ButtonAboutOne, -50);
     lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
     lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
-    lv_obj_set_style_bg_color(ui_ButtonAboutOne, lv_color_hex(BB_BGCOLOR), LV_STATE_ANY);
+    lv_obj_set_style_bg_color(ui_ButtonAboutOne, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_ButtonAboutOne, 255, LV_STATE_ANY);
     lv_obj_add_flag(ui_ButtonAboutOne,LV_OBJ_FLAG_HIDDEN);
     
@@ -2088,7 +2049,15 @@ void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
 
 
 void ui_init(void) {
-    lvgl_sem = xSemaphoreCreateMutex();
+
+    // create queue for added volume
+    uiQueue = xQueueCreate(5, sizeof(uiQueueMessage));
+
+    if (uiQueue == NULL)
+    {
+        debug("ui_loop", "failed to created volumeQueue");
+    }
+
 
     // Display setup
     if(!gfx->begin(40000000UL)) {
@@ -2159,6 +2128,7 @@ void ui_init(void) {
 
 
     lv_disp_load_scr(ui_ScreenAbout);
+
 }
 
 void IRAM_ATTR pulseCounter()
@@ -2182,27 +2152,28 @@ void ui_loop(void *parameters) {
     // initialias Pulse input
     pinMode(PULSE_PIN, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PULSE_PIN),pulseCounter, FALLING);
+    struct uiQueueMessage msg;
 
     while ( 1 == 1 ) {        
-        if ( xSemaphoreTake(lvgl_sem,100) == pdTRUE ) {
-            lv_task_handler();
-            gfx->flush();
+        lv_task_handler();
+        gfx->flush();
 
-            unsigned long currentTime = millis();
+        
+        if (xQueueReceive(uiQueue, &msg, 10))
+        {
+        }
+        
+        unsigned long currentTime = millis();
 
-            if (( ui_message_millis != 0 ) && ( currentTime > ui_message_millis )) {
-                internal_hide_payment_message();
-            }
+        if (( ui_message_millis != 0 ) && ( currentTime > ui_message_millis )) {
+            internal_hide_payment_message();
+        }
 
-            if (currentTime - previousRunTime >= UI_TAP_PROGRESS_INTERVAL ) {
-                previousRunTime = currentTime;
-                internal_update_tapprogress();
-            }
+        if (currentTime - previousRunTime >= UI_TAP_PROGRESS_INTERVAL ) {
+            previousRunTime = currentTime;
+            internal_update_tapprogress();
+        }
 
-            xSemaphoreGive(lvgl_sem);            
-        }        
-
-        Serial.println(ui_tap_remaining_volume);
         vTaskDelay(25);
     }
 }

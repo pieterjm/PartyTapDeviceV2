@@ -24,7 +24,7 @@ int main_shared_lnurlw_len = 0;
 
 bool bDoFirmwareUpdate = false;
 
-ProductConfig productConfig;
+// ProductConfig productConfig;
 // static QueueHandle_t msgQueue;
 
 WebSocketsClient webSocket;
@@ -220,7 +220,14 @@ void main_get_invoice(int product) {
     if ( xSemaphoreTake(control_sem,portMAX_DELAY) == pdTRUE ) {
         selected_product_id = product;
 
-        ws_request_invoice(productConfig.getProduct(selected_product_id)->getSwitchID());
+        String switchId = "";
+        if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {
+            switchId = productConfig.getProduct(selected_product_id)->getSwitchID();
+            xSemaphoreGive(productConfigSemaphore);        
+        }
+
+
+        ws_request_invoice(switchId);
         xSemaphoreGive(control_sem);        
     }
 }
@@ -264,16 +271,17 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                 const char *eventtype = doc["event"].as<const char *>();
                 debug("ws_event","eventtype: %s",eventtype);
                 if ( strcmp(eventtype,WS_EVENTTYPE_SWITCHES) == 0 ) {
-                    productConfig.parse(&doc);
-                    productConfig.save();
+
+
+                    if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {                    
+                        productConfig.parse(&doc);
+                        productConfig.save();
+                        xSemaphoreGive(productConfigSemaphore);        
+                    }
 
 
                     // configure switches in the UI
-                    const char *labels[PARTYTAP_CFG_MAX_PRODUCTS];
-                    for (int i=0;i<PARTYTAP_CFG_MAX_PRODUCTS;i++) {
-                        labels[i] = (char *)productConfig.getProduct(i)->getLabel();
-                    }
-                    ui_init_switches(productConfig.getNumProducts(),(const char **)labels);
+                    ui_init_switches();
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_INVOICE) == 0 ) {
 
 
@@ -294,8 +302,17 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     }
                     
 
+                    int amount = 0;
+                    String currency = "";
+
+                    if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {                   
+                        amount = productConfig.getProduct(selected_product_id)->getAmount();
+                        currency = productConfig.getProduct(selected_product_id)->getCurrency();
+                        xSemaphoreGive(productConfigSemaphore);        
+                    }
+
                     
-                    ui_load_payment_screen(productConfig.getProduct(selected_product_id)->getAmount(),productConfig.getProduct(selected_product_id)->getCurrency());
+                    ui_load_payment_screen(amount, currency.c_str());
                     ui_display_qrcode(payment_request.c_str(),payment_request.length());
                     
                 } else if ( strcmp(eventtype,WS_EVENTTYPE_PAID) == 0 ) {
@@ -430,7 +447,13 @@ void event_nfc_data_read(const uint8_t *buffer,int num) {
             main_shared_lnurlw_len = num;
 
             // and request an invoice
-            ws_request_invoice(productConfig.getProduct(0)->getSwitchID());
+
+            String switchId = "";
+            if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {
+                switchId = productConfig.getProduct(0)->getSwitchID();
+                xSemaphoreGive(productConfigSemaphore);        
+            }
+            ws_request_invoice(switchId);
         } 
         
         xSemaphoreGive(control_sem);        
@@ -527,8 +550,19 @@ void reportState() {
     } else {
         ui_update_websocket_state("Disconnected");
     }
-    ui_update_server_version(productConfig.getServerVersion());
-    ui_update_server_branding(productConfig.getServerBranding());
+
+    String serverVersion = "";
+    String serverBranding = "";
+    
+    
+    if ( xSemaphoreTake(productConfigSemaphore,portMAX_DELAY) == pdTRUE ) {
+        serverVersion = productConfig.getServerVersion();
+        serverBranding = productConfig.getServerBranding();
+        xSemaphoreGive(productConfigSemaphore);        
+    }
+    
+    ui_update_server_version(serverVersion.c_str());
+    ui_update_server_branding(serverBranding.c_str());
 }
 
 
