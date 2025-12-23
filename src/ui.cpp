@@ -12,6 +12,7 @@
 QueueHandle_t uiQueue = NULL;
 TimerHandle_t hideMessageTimer;
 TaskHandle_t lvglTask_Handle;
+TimerHandle_t backToAboutTimer;
 
 #define TASK_NOTIFICATION_PULSE_MASK (0x0000FFFF)
 #define TASK_NOTIFICATION_LVGL (1 << 17)
@@ -241,69 +242,54 @@ void ui_load_screen(lv_obj_t *screen) {
 }
 
 
+void ui_init_tap_screen()  {
+    lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION);
+    lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
+    lv_obj_clear_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+
+}
+
 // Tap progress
 // running in the main loop process, do not lock here
-void internal_update_tapprogress()
+void update_tapprogress()
 {
-    // Serial.printf("[updateTapProgress]  %d %d\n",ui_tap_remaining_volume,ui_tap_timeout);
-
-    if (ui_tap_remaining_volume <= 0)
-    {
-        ui_tap_remaining_volume = 0;
-        if (ui_tap_timeout <= 0)
-        {
-            if (ui_ScreenTap == lv_screen_active())
-            {
-                ui_load_screen(ui_ScreenAbout);
-            }
-            return;
-        }
-        ui_tap_timeout--;
+    // if no credit remaining, close the tap and return
+    if (ui_tap_remaining_volume <= 0) {
+        internal_tap_close();
         return;
-    }
+    }    
 
     // load the tap screen if not loaded
-    if (ui_ScreenTap != lv_screen_active())
-    {
-        ui_tap_running = false;
-        lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION);
-        lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
-        lv_obj_clear_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+    if (ui_ScreenTap != lv_screen_active()) {
         ui_load_screen(ui_ScreenTap);
-    }
-    else if (!(lv_obj_is_visible(ui_BarTapProgress) && lv_obj_is_visible(ui_ButtonTapStart)))
-    {
-        ui_tap_running = false;
-        lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION);
-        lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
-        lv_obj_clear_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+        ui_init_tap_screen();
     }
 
-    lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);
 
-    // if the tap is running
-    if (ui_tap_running)
-    {
-        if (ui_tapConfig.getControlMode() == CONTROL_MODE_TIME)
-        {
-            // substract the volume adjusted for the interval
-            ui_tap_remaining_volume -= (1000 * ui_tapConfig.getVolumePerUnit()) / UI_TAP_PROGRESS_INTERVAL;
-        }
-        lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);
+    // update progress when in timed mode
+    if ( ui_tapConfig.getControlMode() == CONTROL_MODE_TIME ) {
+        ui_tap_remaining_volume -= (1000 * ui_tapConfig.getVolumePerUnit()) / UI_TAP_PROGRESS_INTERVAL;
 
-        if (ui_tap_remaining_volume <= 0)
-        {
+        if ( ui_tap_remaining_volume <= 0 ) {
+            ui_tap_remaining_volume = 0;
+
+            // close the tap
             internal_tap_close();
 
+            // hide the progress bar
             lv_obj_add_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_FINISHED);
 
-            ui_tap_timeout = 3000 / UI_TAP_PROGRESS_INTERVAL;
+
+            // start timer tyo go back to the about screen
+            xTimerStart(backToAboutTimer,pdMS_TO_TICKS(5000));    
         }
     }
+
+
+    // update the progress 
+    lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);    
 }
 
 // called from UI thread, so lock before accessing variables
@@ -2148,6 +2134,11 @@ void ui_hide_message_timer_cb(TimerHandle_t timer)
     ui_queue_send_message(HIDE_MESSAGE, 0);
 }
 
+void ui_back_to_about_timer_cb(TimerHandle_t timer)
+{
+    ui_queue_send_message(LOAD_ABOUT_SCREEN, 0);
+}
+
 
 void IRAM_ATTR pulseCounter()
 {
@@ -2222,6 +2213,12 @@ void ui_loop(void *parameters)
         debug("ui_loop", "Could not create hide message timer");
     }
 
+    // create a timer for going back to the about page
+    backToAboutTimer = xTimerCreate("bnack to about timer", 10, pdFALSE, NULL, ui_back_to_about_timer_cb);
+    if (!backToAboutTimer)
+    {
+        debug("ui_loop", "Could not create backTo about  timer");
+    }
 
 
 
@@ -2240,6 +2237,12 @@ void ui_loop(void *parameters)
             if (ui_tap_remaining_volume <= 0)
             {
                 ui_tap_remaining_volume = 0;
+
+                lv_obj_clear_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+
+                xTimerStart(backToAboutTimer,pdMS_TO_TICKS(5000));
+
             }
         }
 
@@ -2297,7 +2300,7 @@ void ui_loop(void *parameters)
         // update tap progress
         if (ulNotifiedValue & TASK_NOTIFICATION_PROGRESS)
         {
-            internal_update_tapprogress();
+            update_tapprogress();
         }
 
         // general lvgl handler

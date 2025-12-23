@@ -4,7 +4,6 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
-#include <TaskScheduler.h>
 #include "ui.h"
 #include "productconfig.h"
 #include <HTTPUpdate.h>
@@ -22,15 +21,20 @@ int main_shared_lnurlw_len = 0;
 TimerHandle_t networkStateReportTimer;
 TimerHandle_t networkCheckTimer;
 TimerHandle_t networkLoopTimer;
+TimerHandle_t networkInvoiceReceivedTimer;
+TimerHandle_t networkInvoiceExpireTimer;
+
+
 TaskHandle_t networkTask_Handle;
 
 #define TASK_NOTIFICATION_NETWORK_STATE (1 << 1)
 #define TASK_NOTIFICATION_NETWORK_RESTART (1 << 2)
 #define TASK_NOTIFICATION_NETWORK_LOOP (1 << 3)
 #define TASK_NOTIFICATION_NETWORK_CHECK (1 << 4)
+#define TASK_NOTIFICATION_FIRMWARE_UPDATE (1 << 5)
+#define TASK_NOTIFICATION_INVOICE_EXPIRED (1 << 6)
+#define TASK_NOTIFICATION_NO_INVOICE_RECEIVED (1 << 7)
 
-
-bool bDoFirmwareUpdate = false;
 
 // ProductConfig productConfig;
 // static QueueHandle_t msgQueue;
@@ -45,12 +49,6 @@ String config_wifi_ssid = "";
 String config_wspath = "";
 String config_lnbitshost = "";
 
-void expireInvoice();
-void checkInvoiceReceived();
-void firmwareUpdate();
-Task expireInvoiceTask(TASK_IMMEDIATE,TASK_ONCE,&expireInvoice);
-Task checkInvoiceReceivedTask(TASK_IMMEDIATE, TASK_ONCE,&checkInvoiceReceived);
-Task firmwareUpdateTask(TASK_SECOND, TASK_FOREVER, &firmwareUpdate);
 
 #define MAIN_TAP_PROGRESS_INTERVAL 200
 
@@ -88,8 +86,7 @@ void ws_lnurlw_withdraw(const char *lnurlw) {
 
 // firmware update
 bool main_firmware_update() {
-    bDoFirmwareUpdate = true;
-    firmwareUpdateTask.restartDelayed(2000);
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_FIRMWARE_UPDATE, eSetBits);
     return true;
 }
 
@@ -137,14 +134,8 @@ void firmwareUpdateError(int err) {
 }
 
 void firmwareUpdate() {
-    Serial.println("[firmwareUpdate]");
     static char firmware_path[200];    
-    if ( ! bDoFirmwareUpdate ) {
-        return;
-    }
-    bDoFirmwareUpdate = false;
-    
-    Serial.println("[firmwareUpdate] after checks");
+
     webSocket.disableHeartbeat();
     webSocket.disconnect();
 
@@ -159,7 +150,11 @@ void firmwareUpdate() {
     httpUpdate.rebootOnUpdate(true);
 
 #define FIRMWARE_HOST "firmware.bitcointaps.com"
-  snprintf_P(firmware_path, sizeof(firmware_path), PSTR("/partytap/latest/JC3248W535EN/firmware_%s.bin"), productConfig.getServerBranding());
+
+    if (xSemaphoreTake(productConfigSemaphore, portMAX_DELAY) == pdTRUE) {
+        snprintf_P(firmware_path, sizeof(firmware_path), PSTR("/partytap/latest/JC3248W535EN/firmware_%s.bin"), productConfig.getServerBranding());
+        xSemaphoreGive(productConfigSemaphore);
+    }
 #ifdef DEBUG
   Serial.printf("[doFirmwareUpdate] Firmware path %s\n",firmware_path);
 #endif
@@ -182,7 +177,7 @@ void ws_request_invoice(String switchid) {
 #ifdef DEBUG
     Serial.println("[ws_request_invoice]");
 #endif
-    checkInvoiceReceivedTask.restartDelayed(TASK_SECOND * 15);
+    xTimerStart(networkInvoiceReceivedTimer, 0);
 
     String wsmessage = PSTR("{\"event\":\"createinvoice\",\"switch_id\":\"");
     wsmessage +=  switchid;
@@ -278,8 +273,8 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     payment_hash = doc["payment_hash"].as<const char *>();
 
                     // start an expire invoice task
-                    checkInvoiceReceivedTask.disable();
-                    expireInvoiceTask.restartDelayed(TASK_SECOND * 120);
+                    xTimerStop(networkInvoiceReceivedTimer, 0);
+                    xTimerStart(networkInvoiceExpireTimer,pdMS_TO_TICKS(120000));
                         
                     // make a withdraw is lengthis larger than 0, otherwise navigate to the payment screen
                     if ( main_shared_lnurlw_len > 0 ) {                 
@@ -308,7 +303,7 @@ void ws_event(WStype_t type, uint8_t * payload, size_t length) {
                     tone_paid();
                     ui_queue_send_message(SHOW_MESSAGE_INVOICE_PAID,3000);
                     // expiore the invoice
-                    expireInvoiceTask.disable();
+                    xTimerStop(networkInvoiceExpireTimer, 0);
   
   
                     // reset data
@@ -348,8 +343,7 @@ void expireInvoice() {
 #endif
 
     // expire the task    network_restart(ui_tapConfig.getWiFiSSID(),ui_tapConfig.getWiFiPWD(),ui_tapConfig.getLNbitsHost(),ui_tapConfig.getDeviceID());
-
-    expireInvoiceTask.disable();
+    xTimerStop(networkInvoiceExpireTimer, 0);
   
     // reset data
     payment_pin = "";
@@ -434,46 +428,54 @@ void network_loop_timer_cb(TimerHandle_t timer)
     xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_NETWORK_LOOP, eSetBits);
 }
 
+void network_invoice_received_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_NO_INVOICE_RECEIVED, eSetBits);
+}
 
+void network_invoice_expire_timer_cb(TimerHandle_t timer)
+{
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_INVOICE_EXPIRED, eSetBits);
+}
 
 
 void main_loop(void *parameters) {    
     debug("main_loop","Starting");
 
-
-    Scheduler taskScheduler;
-
-    taskScheduler.addTask(expireInvoiceTask);
-    taskScheduler.addTask(firmwareUpdateTask);
-
-
-
     webSocket.onEvent(ws_event);
             
 
-    // start the network task
-#ifdef DEBUG
-    Serial.println("[main_loop] starting network task");
-#endif
-
     // create a timer for providing regular updates of the network state
     networkStateReportTimer = xTimerCreate("network state report timer", pdMS_TO_TICKS(1000), pdTRUE, NULL, network_state_report_timer_cb);
-    if (!networkStateReportTimer)
-    {
+    if (!networkStateReportTimer) {
         debug("network_init", "Could not create network state report timer");
+    }
+
+    // create a timer when no invoice has been received
+    networkInvoiceReceivedTimer = xTimerCreate("network invoice received timer", pdMS_TO_TICKS(15000), pdTRUE, NULL, network_invoice_received_timer_cb);
+    if (!networkInvoiceReceivedTimer) {
+        debug("network_init", "Could not create network invoice received timer.");
+    }
+
+    // create a timer when the current invoice is to be expired
+    networkInvoiceExpireTimer = xTimerCreate("network invoice expire timer", pdMS_TO_TICKS(120000), pdTRUE, NULL, network_invoice_expire_timer_cb);
+    if (!networkInvoiceExpireTimer) {
+        debug("network_init", "Could not create network invoice expire timer.");
     }
 
     // create a timer to check the status of the network and the websocket
     networkCheckTimer = xTimerCreate("network check timer", pdMS_TO_TICKS(5000), pdTRUE, NULL, network_check_timer_cb);
-    if (!networkCheckTimer)
-    {
+    if (networkCheckTimer) {
+        xTimerStart(networkCheckTimer, 0);
+    } else {
         debug("network_init", "Could not create network check timer");
     }
 
     // create a timer to check the status of the network and the websocket
     networkLoopTimer = xTimerCreate("network loop timer", 100, pdTRUE, NULL, network_loop_timer_cb);
-    if (!networkLoopTimer)
-    {
+    if ( networkLoopTimer) {
+        xTimerStart(networkLoopTimer,0);
+    } else {
         debug("network_init", "Could not create network loop timer");
     }
 
@@ -484,32 +486,41 @@ void main_loop(void *parameters) {
         xTaskNotifyWait(0, 0xFFFFFFFF, &ulNotifiedValue, portMAX_DELAY);
 
         // report the state of the network
-        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_STATE )
-        {
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_STATE ) {
             networkReportState();
         }
 
         // check the state of the network
-        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_CHECK )
-        {
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_CHECK ) {
             network_check();
         }
 
         // restart the network
-        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_RESTART )
-        {
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_RESTART ) {
             internal_network_restart();
         }
 
 
         // keep network processes up and running
-        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_LOOP )
-        {
-            taskScheduler.execute();
+        if (ulNotifiedValue & TASK_NOTIFICATION_NETWORK_LOOP ) {
             webSocket.loop();        
         }
 
+        // keep network processes up and running
+        if (ulNotifiedValue & TASK_NOTIFICATION_FIRMWARE_UPDATE ) {
+            firmwareUpdate();            
+        }
 
+        // no invoice received on time
+        if ( ulNotifiedValue & TASK_NOTIFICATION_NO_INVOICE_RECEIVED ) {
+            ui_queue_send_message(SHOW_MESSAGE_NO_INVOICE_RECEIVED,5000);            
+        }
+
+        // invoice expired
+        if ( ulNotifiedValue & TASK_NOTIFICATION_INVOICE_EXPIRED ) {
+            expireInvoice();            
+            ui_queue_send_message(LOAD_ABOUT_SCREEN,0);
+        }
     }
 }
 

@@ -29,7 +29,6 @@
 ESP32I2SAudio audio(AUDIO_I2S_BCK_IO,AUDIO_I2S_LRCK_IO,AUDIO_I2S_DO_IO,AUDIO_I2S_MCK_IO);
 ROMBackgroundAudioWAV BMP(audio);
 
-TaskHandle_t nfcTask_Handle;
 
 ProductConfig productConfig;
 SemaphoreHandle_t productConfigSemaphore;
@@ -94,7 +93,6 @@ void setup() {
     audio.setStereo(false);
     BMP.begin();
 
-
     Serial.begin(115200);
     debug("setup","Starting up");
 
@@ -107,43 +105,7 @@ void setup() {
     // Initialise UI
     ui_init();
 
-
-
-
-
-
-
-    if ( ! nfc_init() ) {
-        debug("setup","NFC initi failed. not starting NFC loop");        
-    } else {
-        if ( xTaskCreatePinnedToCore (
-            nfc_loop,     // Function to implement the task
-            "loopNFC",   // Name of the task
-            4096,      // Stack size in bytes
-            NULL,      // Task input parameter
-            10,         // Priority of the task
-            &nfcTask_Handle,      // Task handle.
-            0          // Core where the task should run
-            ) == pdTRUE ) {
-            debug("setup","NFC task succesfully started");
-        } else {
-            debug("setup","Failed to start NFC task");
-        }
-    }
-
-
-
-    // UBaseType_t iFreeStackNum = 0;
-    // while ( 1 == 1 ) {
-    //     Serial.printf("Number of tasks: %d\n",uxTaskGetNumberOfTasks());
-    //     iFreeStackNum = uxTaskGetStackHighWaterMark(nfcTask_Handle);
-    //     Serial.printf("NFC Stack Free: %d\n",iFreeStackNum);
-    //     iFreeStackNum = uxTaskGetStackHighWaterMark(lvglTask_Handle);
-    //     Serial.printf("LVGL Stack Free: %d\n",iFreeStackNum);
-    //     iFreeStackNum = uxTaskGetStackHighWaterMark(controlTask_Handle);
-    //     Serial.printf("Control Stack Free: %d\n",iFreeStackNum);
-    //     vTaskDelay(30000/portTICK_PERIOD_MS);
-    // }    
+    nfc_init();
 }
 
 

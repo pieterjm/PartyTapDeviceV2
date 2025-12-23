@@ -1,15 +1,13 @@
 #include <Arduino.h>
 #include <Adafruit_PN532_NTAG424.h>
-// #include <PN532_I2C.h>
-// #include <PN532.h>
-// #include <NfcAdapter.h>
 
 #include "nfc.h"
 #include "ui.h"
 #include "network.h"
 #include "bitcointap.h"
 
-static SemaphoreHandle_t nfc_sem;
+TaskHandle_t nfcTask_Handle;
+
 
 #define SENSACT_NFC_CB_UNAVAILABLE  0
 #define SENSACT_NFC_CB_NOREAD       1
@@ -84,62 +82,6 @@ bool nfc_power_on() {
     return pn532_writecommand(command,7);
 }
 
-
-
-// Initialize the NFC sensor
-bool nfc_init() {
-    debug("nfc_init","");
-    nfc_sem = xSemaphoreCreateMutex();
-
-    wire = new TwoWire(1);
-    wire->begin(17,18);
-    nfc = new Adafruit_PN532(-1,-1,wire);
-    
-//    if ( nfc_power_on() ) {
-//       nfc_set_rf_power(190,0x40, 0x03, 0x0E);
-//    }
-
-    // Send the command to the PN532 and check if it was successful
-
-    if ( nfc->begin() ) {
-        debug("nfc_init","Succes init PN532");
-    } else {
-        debug("nfc_init","Fail init PN532");
-        return false;
-    }
-    
-
-    uint32_t versiondata = nfc->getFirmwareVersion();
-    if (!versiondata) {
-        debug("nfc_init","No version data");
-        return false;
-    } else {
-        debug("nfc_init","Version data %d",versiondata);
-    }
-  
-    // if ( ! nfc->setPassiveActivationRetries(0xFF) ) {
-    //     debug("nfc_init","setPassiveActivationRetries failed");
-    //     return false;
-    // } else {
-    //     debug("nfc_init","setPassiveActivationRetries succes");        
-    // }
-
-    if ( ! nfc->SAMConfig() ) {
-        debug("nfc_init","SAMConfig fail");
-        return false;
-    } else {
-        debug("nfc_init","SAMConfig succes");
-    }
-
-
-
-    return true;
-}
-
-
-
-
-
 void nfc_loop(void *parameters) 
 { 
     int msg = 0;
@@ -193,6 +135,68 @@ void nfc_loop(void *parameters)
         event_nfc_data_read(nfcbuffer, bytesread);           
     } 
 }
+
+
+
+// Initialize the NFC sensor
+bool nfc_init() {
+    debug("nfc_init","");
+
+    wire = new TwoWire(1);
+    wire->begin(17,18);
+    nfc = new Adafruit_PN532(-1,-1,wire);
+    
+    // Send the command to the PN532 and check if it was successful
+    if ( nfc->begin() ) {
+        debug("nfc_init","Succes init PN532");
+    } else {
+        debug("nfc_init","Fail init PN532");
+        return false;
+    }
+    
+
+    uint32_t versiondata = nfc->getFirmwareVersion();
+    if (!versiondata) {
+        debug("nfc_init","No version data");
+        return false;
+    } else {
+        debug("nfc_init","Version data %d",versiondata);
+    }
+  
+    // if ( ! nfc->setPassiveActivationRetries(0xFF) ) {
+    //     debug("nfc_init","setPassiveActivationRetries failed");
+    //     return false;
+    // } else {
+    //     debug("nfc_init","setPassiveActivationRetries succes");        
+    // }
+
+    if ( ! nfc->SAMConfig() ) {
+        debug("nfc_init","SAMConfig fail");
+        return false;
+    } else {
+        debug("nfc_init","SAMConfig succes");
+    }
+
+    if (xTaskCreatePinnedToCore(
+            nfc_loop,        // Function to implement the task
+            "loopNFC",       // Name of the task
+            4096,            // Stack size in bytes
+            NULL,            // Task input parameter
+            10,              // Priority of the task
+            &nfcTask_Handle, // Task handle.
+            0                // Core where the task should run
+            ) == pdTRUE) {
+        debug("setup", "NFC task succesfully started");
+    } else {
+        debug("setup", "Failed to start NFC task");
+    }
+
+    return true;
+}
+
+
+
+
 
 
 bool pn532_set_rfpower(int power) {
