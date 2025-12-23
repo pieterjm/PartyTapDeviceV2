@@ -8,7 +8,8 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "tapconfig.h"
 
-void ui_init(void);
+void ui_init();
+void ui_start();
 
 bool ui_load_payment_screen(int amount, const char *currency);
 bool ui_display_qrcode(const char *s,int len);
@@ -44,6 +45,7 @@ enum UIQueueMessageType
     SHOW_MESSAGE_NFC_READ_ERROR,
     SHOW_MESSAGE_INVALID_CARD,
     SHOW_MESSAGE_CREATING_INVOICE,
+    SHOW_MESSAGE_SSID_NOT_FOUND,
     REPORT_WIFI_STATE,
     REPORT_WEBSOCKET_STATE
     

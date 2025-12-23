@@ -174,9 +174,14 @@ bool nfc_init() {
         debug("nfc_init","SAMConfig fail");
         return false;
     } else {
-        debug("nfc_init","SAMConfig succes");
+        debug("nfc_init","SAMConfig succes");    
     }
 
+    return true;
+}
+
+
+void nfc_start() {
     if (xTaskCreatePinnedToCore(
             nfc_loop,        // Function to implement the task
             "loopNFC",       // Name of the task
@@ -190,8 +195,6 @@ bool nfc_init() {
     } else {
         debug("setup", "Failed to start NFC task");
     }
-
-    return true;
 }
 
 

@@ -17,6 +17,8 @@ void ws_lnurlw_withdraw(const char *lnurlw);
 
 void network_init();
 
+void network_start();
+
 extern TimerHandle_t networkStateReportTimer;
 
 

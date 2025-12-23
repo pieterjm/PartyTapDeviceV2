@@ -9,9 +9,11 @@
 #include "network.h"
 #include <ESP32Servo.h>
 
+TaskHandle_t lvglTask_Handle;
 QueueHandle_t uiQueue = NULL;
 TimerHandle_t hideMessageTimer;
-TaskHandle_t lvglTask_Handle;
+TimerHandle_t lvglTimer;
+TimerHandle_t progressTimer;
 TimerHandle_t backToAboutTimer;
 
 #define TASK_NOTIFICATION_PULSE_MASK (0x0000FFFF)
@@ -418,19 +420,24 @@ void set_message(uiQueueMessage msg)
     case SHOW_MESSAGE_WRONG_FLASH:
         message = "WRONG FLASH";
         break;
+    case SHOW_MESSAGE_SSID_NOT_FOUND:
+        message = "SSID NOT FOUND";
+        break;
     default:
         message = "UNDEFINED";
         break;
     }
+
+    debug("set_message",message.c_str());
     lv_label_set_text(ui_LabelAboutMessage, message.c_str());
     lv_label_set_text(ui_LabelPaymentMessage, message.c_str());
     lv_obj_clear_flag(ui_PanelPaymentMessage, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ui_PanelAboutMessage, LV_OBJ_FLAG_HIDDEN);
 
-    xTimerStop(hideMessageTimer, 10);
     if (msg.data > 0)
     {
-        xTimerStart(hideMessageTimer, pdMS_TO_TICKS(msg.data));
+        xTimerChangePeriod(hideMessageTimer, pdMS_TO_TICKS(msg.data),1000);  // this should also start the timer
+        xTimerReset(hideMessageTimer,1000);
     }
 }
 
@@ -464,7 +471,11 @@ void ui_queue_send_message(UIQueueMessageType type, uint16_t data)
     struct uiQueueMessage msg;
     msg.type = type;
     msg.data = data;
-    xQueueSend(uiQueue, &msg, portMAX_DELAY);
+    if ( uiQueue != NULL )  {
+        xQueueSend(uiQueue, &msg, portMAX_DELAY);
+    } else {
+        debug("ui_queue_send_message","no uiQueue defined");
+    }
 }
 
 // show the product selection buttons
@@ -2160,68 +2171,16 @@ void ui_progress_timer_cb(TimerHandle_t timer)
 
 void ui_loop(void *parameters)
 {
-    ui_tapConfig.load();
+    struct uiQueueMessage msg;
+    
+    // send the network the command to (re)start
+    debug("ui_loop","calling network_restart");
     network_restart(ui_tapConfig.getWiFiSSID(), ui_tapConfig.getWiFiPWD(), ui_tapConfig.getLNbitsHost(), ui_tapConfig.getDeviceID());
 
-    // initialise servo
-    ui_servo = new Servo();
-    ui_servo->attach(SERVO_PIN);
-    internal_tap_close();
 
-    // initialise rela
-    pinMode(RELAY_PIN, OUTPUT);
-
-    // initialias Pulse input
-    pinMode(PULSE_PIN, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(PULSE_PIN), pulseCounter, FALLING);
-    struct uiQueueMessage msg;
-
-
-    // create queue for added volume
-    uiQueue = xQueueCreate(5, sizeof(uiQueueMessage));
-    if (uiQueue == NULL)
-    {
-        debug("ui_loop", "failed to created uiQueue");
-    }
-
-    // LVGL timer
-    TimerHandle_t lvglTimer = xTimerCreate("LVGL timer", 25, pdTRUE, NULL, ui_lvgl_timer_cb);
-    if (lvglTimer)
-    {
-        xTimerStart(lvglTimer, 0);
-    }
-    else
-    {
-        Serial.println("[ui_loop] Failed to create lvglTimer");
-    }
-
-    // progress bar timer
-    TimerHandle_t progressTimer = xTimerCreate("Progress timer", pdMS_TO_TICKS(UI_TAP_PROGRESS_INTERVAL), pdTRUE, NULL, ui_progress_timer_cb);
-    if (progressTimer)
-    {
-        xTimerStart(progressTimer, 0);
-    }
-    else
-    {
-        Serial.println("[ui_loop] Failed to create progressTimer");
-    }
- 
-    // create a timer for hiding messages after a timeout controlled by this timer
-    hideMessageTimer = xTimerCreate("hide message timer", 10, pdFALSE, NULL, ui_hide_message_timer_cb);
-    if (!hideMessageTimer)
-    {
-        debug("ui_loop", "Could not create hide message timer");
-    }
-
-    // create a timer for going back to the about page
-    backToAboutTimer = xTimerCreate("bnack to about timer", 10, pdFALSE, NULL, ui_back_to_about_timer_cb);
-    if (!backToAboutTimer)
-    {
-        debug("ui_loop", "Could not create backTo about  timer");
-    }
-
-
-
+    xTimerStart(lvglTimer, 0);
+    xTimerStart(progressTimer, 0);
+    
 
     while (1 == 1)
     {
@@ -2290,6 +2249,7 @@ void ui_loop(void *parameters)
             case SHOW_MESSAGE_WEBSOCKET_NOT_CONNECTED:
             case SHOW_MESSAGE_WIFI_NOT_CONNECTED:
             case SHOW_MESSAGE_WRONG_FLASH:
+            case SHOW_MESSAGE_SSID_NOT_FOUND:
                 set_message(msg);
                 break;
             default:
@@ -2312,8 +2272,20 @@ void ui_loop(void *parameters)
     }
 }
 
-void ui_init(void)
+void ui_init()
 {
+    ui_tapConfig.load();
+
+    // initialise servo
+    // initialise rela
+    pinMode(RELAY_PIN, OUTPUT);
+    ui_servo = new Servo();
+    ui_servo->attach(SERVO_PIN);
+    internal_tap_close();
+
+    // initialias Pulse input
+    pinMode(PULSE_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PULSE_PIN), pulseCounter, FALLING);
 
     // Display setup
     if (!gfx->begin(40000000UL))
@@ -2386,6 +2358,47 @@ void ui_init(void)
     ui_ScreenTap_screen_init();
 
     lv_disp_load_scr(ui_ScreenAbout);
+
+
+    // create queue for added volume
+    uiQueue = xQueueCreate(5, sizeof(uiQueueMessage));
+    if (uiQueue == NULL)
+    {
+        debug("ui_loop", "failed to created uiQueue");
+    }
+
+    // LVGL timer
+    lvglTimer = xTimerCreate("LVGL timer", 25, pdTRUE, NULL, ui_lvgl_timer_cb);
+    if (!lvglTimer)
+    {
+        Serial.println("[ui_loop] Failed to create lvglTimer");
+    }
+
+    // progress bar timer
+    progressTimer = xTimerCreate("Progress timer", pdMS_TO_TICKS(UI_TAP_PROGRESS_INTERVAL), pdTRUE, NULL, ui_progress_timer_cb);
+    if (!progressTimer)
+    {
+        Serial.println("[ui_loop] Failed to create progressTimer");
+    }
+ 
+    // create a timer for hiding messages after a timeout controlled by this timer
+    hideMessageTimer = xTimerCreate("hide message timer", pdMS_TO_TICKS(3000), pdFALSE, NULL, ui_hide_message_timer_cb);
+    if (!hideMessageTimer)
+    {
+        debug("ui_loop", "Could not create hide message timer");
+    }
+
+    // create a timer for going back to the about page
+    backToAboutTimer = xTimerCreate("bnack to about timer", 10, pdFALSE, NULL, ui_back_to_about_timer_cb);
+    if (!backToAboutTimer)
+    {
+        debug("ui_loop", "Could not create backTo about  timer");
+    }
+
+
+}
+
+void ui_start() {
 
     // Start UI thread
     if ( xTaskCreatePinnedToCore (

@@ -35,14 +35,12 @@ SemaphoreHandle_t productConfigSemaphore;
         
 
 void debug(const char *function,const char *format, ...) {
-#ifdef DEBUG
     va_list args;
     va_start(args,format);
     Serial.printf("[%s] ",function);
     Serial.vprintf(format, args);
     Serial.printf("\n");
     va_end(args);
-#endif
 }
 
 void tone_negative() {
@@ -98,14 +96,19 @@ void setup() {
 
     LittleFS.begin(true);
 
+    productConfigSemaphore = xSemaphoreCreateMutex();
     
-    // network init
-    network_init();
     
     // Initialise UI
+    network_init();
     ui_init();
+    if ( nfc_init() ) {
+        nfc_start();
+    }
 
-    nfc_init();
+    // network init
+    network_start();
+    ui_start();
 }
 
 

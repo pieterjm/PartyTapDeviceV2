@@ -146,7 +146,6 @@ void firmwareUpdate() {
 
     httpUpdate.onEnd(firmwareUpdateFinished);
     httpUpdate.onProgress(firmwareUpdateProgress);
-    httpUpdate.onError(firmwareUpdateError);
     httpUpdate.rebootOnUpdate(true);
 
 #define FIRMWARE_HOST "firmware.bitcointaps.com"
@@ -211,13 +210,15 @@ void main_get_invoice(int product) {
 // called from UI thread, so lock before accessing variables
 void network_restart(String wifi_ssid,String wifi_pwd,String lnbitshost,String deviceid) {
     debug("network_restart","Restarting network");
-    if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(networkConfigSemaphore, portMAX_DELAY) == pdTRUE) {        
+        debug("network_restart","Got semaphore");
         config_wifi_ssid = wifi_ssid;
         config_wifi_pwd = wifi_pwd;
         config_lnbitshost = lnbitshost;
         config_wspath = "/partytap/api/v1/ws/" + deviceid;        
         xSemaphoreGive(networkConfigSemaphore);
     }
+    xTaskNotify(networkTask_Handle, TASK_NOTIFICATION_NETWORK_RESTART, eSetBits);
 }
 
 
@@ -403,6 +404,7 @@ void network_check()
             break;
         case WL_NO_SSID_AVAIL:
             debug("check_network","SSID not available");
+            ui_queue_send_message(SHOW_MESSAGE_SSID_NOT_FOUND,3000);
             break;
         default:
             debug("check_network","Unknown WiFi status %d",WiFi.status());
@@ -442,43 +444,12 @@ void network_invoice_expire_timer_cb(TimerHandle_t timer)
 void main_loop(void *parameters) {    
     debug("main_loop","Starting");
 
+    xTimerStart(networkCheckTimer, 0);
+    xTimerStart(networkLoopTimer,0);
+    
+
     webSocket.onEvent(ws_event);
             
-
-    // create a timer for providing regular updates of the network state
-    networkStateReportTimer = xTimerCreate("network state report timer", pdMS_TO_TICKS(1000), pdTRUE, NULL, network_state_report_timer_cb);
-    if (!networkStateReportTimer) {
-        debug("network_init", "Could not create network state report timer");
-    }
-
-    // create a timer when no invoice has been received
-    networkInvoiceReceivedTimer = xTimerCreate("network invoice received timer", pdMS_TO_TICKS(15000), pdTRUE, NULL, network_invoice_received_timer_cb);
-    if (!networkInvoiceReceivedTimer) {
-        debug("network_init", "Could not create network invoice received timer.");
-    }
-
-    // create a timer when the current invoice is to be expired
-    networkInvoiceExpireTimer = xTimerCreate("network invoice expire timer", pdMS_TO_TICKS(120000), pdTRUE, NULL, network_invoice_expire_timer_cb);
-    if (!networkInvoiceExpireTimer) {
-        debug("network_init", "Could not create network invoice expire timer.");
-    }
-
-    // create a timer to check the status of the network and the websocket
-    networkCheckTimer = xTimerCreate("network check timer", pdMS_TO_TICKS(5000), pdTRUE, NULL, network_check_timer_cb);
-    if (networkCheckTimer) {
-        xTimerStart(networkCheckTimer, 0);
-    } else {
-        debug("network_init", "Could not create network check timer");
-    }
-
-    // create a timer to check the status of the network and the websocket
-    networkLoopTimer = xTimerCreate("network loop timer", 100, pdTRUE, NULL, network_loop_timer_cb);
-    if ( networkLoopTimer) {
-        xTimerStart(networkLoopTimer,0);
-    } else {
-        debug("network_init", "Could not create network loop timer");
-    }
-
 
     while ( 1 == 1 ) {  
         uint32_t ulNotifiedValue = 0;
@@ -558,6 +529,44 @@ void event_nfc_data_read(const uint8_t *buffer,int num) {
 
 void network_init() {
     debug("network_init","Initializing network");
+
+    // create a timer for providing regular updates of the network state
+    networkStateReportTimer = xTimerCreate("network state report timer", pdMS_TO_TICKS(1000), pdTRUE, NULL, network_state_report_timer_cb);
+    if (!networkStateReportTimer) {
+        debug("network_init", "Could not create network state report timer");
+    }
+
+    // create a timer when no invoice has been received
+    networkInvoiceReceivedTimer = xTimerCreate("network invoice received timer", pdMS_TO_TICKS(15000), pdFALSE, NULL, network_invoice_received_timer_cb);
+    if (!networkInvoiceReceivedTimer) {
+        debug("network_init", "Could not create network invoice received timer.");
+    }
+
+    // create a timer when the current invoice is to be expired
+    networkInvoiceExpireTimer = xTimerCreate("network invoice expire timer", pdMS_TO_TICKS(120000), pdFALSE, NULL, network_invoice_expire_timer_cb);
+    if (!networkInvoiceExpireTimer) {
+        debug("network_init", "Could not create network invoice expire timer.");
+    }
+
+    // create a timer to check the status of the network and the websocket
+    networkCheckTimer = xTimerCreate("network check timer", pdMS_TO_TICKS(5000), pdTRUE, NULL, network_check_timer_cb);
+    if ( !networkCheckTimer) {
+        debug("network_init", "Could not create network check timer");
+    }
+
+    // create a timer to check the status of the network and the websocket
+    networkLoopTimer = xTimerCreate("network loop timer", 100, pdTRUE, NULL, network_loop_timer_cb);
+    if ( ! networkLoopTimer) {
+        debug("network_init", "Could not create network loop timer");
+    }
+
+
+
+
+    networkConfigSemaphore = xSemaphoreCreateMutex();
+}
+
+void network_start() {
 
     if ( xTaskCreatePinnedToCore (
         main_loop,     // Function to implement the task
