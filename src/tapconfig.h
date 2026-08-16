@@ -3,9 +3,11 @@
 
 #include <Arduino.h>
 
-#define PAYMENT_MODE_ONLINE  0
+#define PAYMENT_MODE_WIFI    0 
 #define PAYMENT_MODE_OFFLINE 1
 #define PAYMENT_MODE_AUTO    2
+#define PAYMENT_MODE_SERIAL  3
+#define PAYMENT_MODE_NONE    4
 
 #define CONTROL_MODE_NONE   0
 #define CONTROL_MODE_TIME   1

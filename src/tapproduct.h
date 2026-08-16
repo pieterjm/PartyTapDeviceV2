@@ -25,6 +25,7 @@ class TapProduct {
         const char *getLabel();
         const char *getPayString();
         int getTapDuration();
+        int getTapVolume();
         const char *getCurrency();
         float getAmount();
 

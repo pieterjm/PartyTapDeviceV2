@@ -8,11 +8,6 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "tapconfig.h"
 
-void ui_init();
-void ui_start();
-
-bool ui_load_payment_screen(int amount, const char *currency);
-bool ui_display_qrcode(const char *s,int len);
 
 // the following list of variables can only be accessed when a lock
 enum UIQueueMessageType
@@ -21,6 +16,7 @@ enum UIQueueMessageType
     SHOW_PAYMENT_BUTTONS,
     HIDE_PAYMENT_BUTTONS,
     LOAD_ABOUT_SCREEN,
+    INIT_AND_LOAD_PAYMENT_SCREEN,
     HIDE_MESSAGE,
     SHOW_MESSAGE_NOT_CONNECTED,
     SHOW_MESSAGE_NO_INVOICE_RECEIVED,
@@ -47,16 +43,28 @@ enum UIQueueMessageType
     SHOW_MESSAGE_CREATING_INVOICE,
     SHOW_MESSAGE_SSID_NOT_FOUND,
     REPORT_WIFI_STATE,
-    REPORT_WEBSOCKET_STATE
-    
+    REPORT_WEBSOCKET_STATE,
+    STOP_TAP,
+    OPEN_TAP,
+    CLOSE_TAP,
+    FLOW_TAP_TIMEOUT,
+    FREE_DRINK    
 };
 
+// send a message to the ui queue 
 void ui_queue_send_message(UIQueueMessageType type,uint16_t data);
 
+// initialiase the use task
+void ui_task_init();
 
-#define UIQUEUE_DISPLAY_PAYMENT_REQUEST 0x28
-#define UIQUEUE_DISPLAY_PAYMENT_MESSAGE 0x29
+// start ui task
+void ui_task_start();
 
+// request to initialise and load the payment screen
+// pr is the payment request
+// currency is the currency of the payment
+// amount is the amount to be paid in the selected currency
+bool ui_init_and_load_payment_screen(String pr, String currency, float amount);
 
 
 #ifdef __cplusplus

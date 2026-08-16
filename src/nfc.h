@@ -3,10 +3,10 @@
 
 #include <Arduino.h>
 
-bool nfc_init();
+bool nfc_task_init();
 
 
-void nfc_start();
+void nfc_task_start();
 
 bool nfc_set_rf_power(int power, int gain = 0x40, int modulation = 0x03, int miller = 0x0E);
 

@@ -6,7 +6,7 @@
 #include "network.h"
 #include "bitcointap.h"
 
-TaskHandle_t nfcTask_Handle;
+TaskHandle_t nfcTaskHandle;
 
 
 #define SENSACT_NFC_CB_UNAVAILABLE  0
@@ -82,7 +82,7 @@ bool nfc_power_on() {
     return pn532_writecommand(command,7);
 }
 
-void nfc_loop(void *parameters) 
+void nfc_task(void *parameters) 
 { 
     int msg = 0;
 
@@ -139,8 +139,8 @@ void nfc_loop(void *parameters)
 
 
 // Initialize the NFC sensor
-bool nfc_init() {
-    debug("nfc_init","");
+bool nfc_task_init() {
+    debug("nfc_task_init","");
 
     wire = new TwoWire(1);
     wire->begin(17,18);
@@ -148,47 +148,47 @@ bool nfc_init() {
     
     // Send the command to the PN532 and check if it was successful
     if ( nfc->begin() ) {
-        debug("nfc_init","Succes init PN532");
+        debug("nfc_task_init","Succes init PN532");
     } else {
-        debug("nfc_init","Fail init PN532");
+        debug("nfc_task_init","Fail init PN532");
         return false;
     }
     
 
     uint32_t versiondata = nfc->getFirmwareVersion();
     if (!versiondata) {
-        debug("nfc_init","No version data");
+        debug("nfc_task_init","No version data");
         return false;
     } else {
-        debug("nfc_init","Version data %d",versiondata);
+        debug("nfc_task_init","Version data %d",versiondata);
     }
   
     // if ( ! nfc->setPassiveActivationRetries(0xFF) ) {
-    //     debug("nfc_init","setPassiveActivationRetries failed");
+    //     debug("nfc_task_init","setPassiveActivationRetries failed");
     //     return false;
     // } else {
-    //     debug("nfc_init","setPassiveActivationRetries succes");        
+    //     debug("nfc_task_init","setPassiveActivationRetries succes");        
     // }
 
     if ( ! nfc->SAMConfig() ) {
-        debug("nfc_init","SAMConfig fail");
+        debug("nfc_task_init","SAMConfig fail");
         return false;
     } else {
-        debug("nfc_init","SAMConfig succes");    
+        debug("nfc_task_init","SAMConfig succes");    
     }
 
     return true;
 }
 
 
-void nfc_start() {
+void nfc_task_start() {
     if (xTaskCreatePinnedToCore(
-            nfc_loop,        // Function to implement the task
+            nfc_task,        // Function to implement the task
             "loopNFC",       // Name of the task
             4096,            // Stack size in bytes
             NULL,            // Task input parameter
             10,              // Priority of the task
-            &nfcTask_Handle, // Task handle.
+            &nfcTaskHandle, // Task handle.
             0                // Core where the task should run
             ) == pdTRUE) {
         debug("setup", "NFC task succesfully started");
@@ -212,7 +212,7 @@ bool pn532_set_rfpower(int power) {
     command[2] = power;
 
     if ( ! nfc->sendCommandCheckAck(command,3) ) {
-        debug("nfc_init","failed to set power");
+        debug("nfc_task_init","failed to set power");
         return false;
     }
 
@@ -246,9 +246,9 @@ bool nfc_set_rf_power(int power, int gain, int modulation, int miller) {
     command[2] = power;
 
     if ( nfc->sendCommandCheckAck(command,3,1000) ) {
-        debug("nfc_init","succes setting power");
+        debug("nfc_task_init","succes setting power");
     } else {
-        debug("nfc_init","failed to set power");
+        debug("nfc_task_init","failed to set power");
     }
 
 
@@ -261,9 +261,9 @@ bool nfc_set_rf_power(int power, int gain, int modulation, int miller) {
     command[2] = modulation;
 
     if ( nfc->sendCommandCheckAck(command,3,10000) ) {
-        Serial.printf("Successfully set modulation index to %d\n",modulation);
+        debug("nfc_set_rf_power","Successfully set modulation index to %d",modulation);
     } else {
-        Serial.println("Failed to set modulation index");
+        debug("nfc_set_rf_power","Failed to set modulation index");
     }
 
     // Set number of Miller coding pulses
@@ -273,9 +273,9 @@ bool nfc_set_rf_power(int power, int gain, int modulation, int miller) {
     command[2] = miller;
 
     if ( nfc->sendCommandCheckAck(command,3,10000) ) {
-        Serial.printf("Successfully set Miller coding pulses to %d\n",miller);
+        debug("nfc_set_rf_power","Successfully set Miller coding pulses to %d",miller);
     } else {
-        Serial.println("Failed to set Miller coding pulses");
+        debug("nfc_set_rf_power","Failed to set Miller coding pulses");
     }
 
     // Set RxGain in RFCfg register
@@ -285,9 +285,9 @@ bool nfc_set_rf_power(int power, int gain, int modulation, int miller) {
     command[2] = gain;
 
     if ( nfc->sendCommandCheckAck(command,3,10000) ) {
-        Serial.printf("Successfully set RxGain to %d\n",gain);
+        debug("nfc_set_rf_power","Successfully set RxGain to %d",gain);
     } else {
-        Serial.println("Failed to set RxGain");
+        debug("nfc_set_rf_power","Failed to set RxGain");
     }
 
     // Return true if all commands were successful, false otherwise

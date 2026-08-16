@@ -24,14 +24,14 @@
 TapConfig::TapConfig() {
     this->bChanged = false;
     this->pin = String(CONFIG_PIN);
-    this->lnbitshost = "party.bitcointaps.com";
+    this->lnbitshost = "pay.bitcointaps.com";
     this->deviceid = "";
     this->servo_close = 90;
     this->servo_open = 90;
     this->wifi_ssid = "";
     this->wifi_pwd = "";
     this->tap_duration = 5000;
-    this->paymentMode = PAYMENT_MODE_ONLINE;
+    this->paymentMode = PAYMENT_MODE_WIFI;
     this->backlight = 100;
     this->controlMode = CONTROL_MODE_TIME;
     this->volume_per_unit = 1;

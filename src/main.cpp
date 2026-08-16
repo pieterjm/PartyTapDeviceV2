@@ -1,6 +1,5 @@
 // Add flow meter
 // Add valve
-#define DEBUG
 
 #include <LittleFS.h>
 #include <BackgroundAudioWAV.h>
@@ -13,6 +12,7 @@
 #include "nfc.h"
 #include "pingwav.h"
 #include "levelup.h"
+
 // create source code file for network functions
 // move from main to network 
 
@@ -32,11 +32,20 @@ ROMBackgroundAudioWAV BMP(audio);
 
 ProductConfig productConfig;
 SemaphoreHandle_t productConfigSemaphore;
-        
+
+SemaphoreHandle_t paymentDataSemaphore;
+String paymentDataProduct = "";
+float paymentDataAmount = 0;
+String paymentDataCurrency = "";
+
+SemaphoreHandle_t networkConfigSemaphore;
+
+
 
 void debug(const char *function,const char *format, ...) {
     va_list args;
-    va_start(args,format);
+    va_start(args,format);    
+
     Serial.printf("[%s] ",function);
     Serial.vprintf(format, args);
     Serial.printf("\n");
@@ -86,10 +95,14 @@ void tone_paymentfailed() {
 
 // Arduino initial setup call
 void setup() {
+
+    esp_log_level_set("*", ESP_LOG_NONE);
+
     delay(5000);
 
     audio.setStereo(false);
     BMP.begin();
+
 
     Serial.begin(115200);
     debug("setup","Starting up");
@@ -97,18 +110,30 @@ void setup() {
     LittleFS.begin(true);
 
     productConfigSemaphore = xSemaphoreCreateMutex();
+    paymentDataSemaphore = xSemaphoreCreateMutex();
+    networkConfigSemaphore = xSemaphoreCreateMutex();
+
+
     
     
-    // Initialise UI
-    network_init();
-    ui_init();
-    if ( nfc_init() ) {
-        nfc_start();
+    // Initialise network
+    network_task_init();
+
+    // initialiase UI
+    ui_task_init();
+
+    // initialise and start NFC
+    if ( nfc_task_init() ) {
+        nfc_task_start();
     }
 
-    // network init
-    network_start();
-    ui_start();
+    // network start
+    network_task_start();
+
+    // UI start
+    ui_task_start();
+
+
 }
 
 

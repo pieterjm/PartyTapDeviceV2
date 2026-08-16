@@ -57,3 +57,7 @@ const char *TapProduct::getSwitchID() {
 int TapProduct::getTapDuration() {
     return this->tapduration;
 }
+
+int TapProduct::getTapVolume() {
+    return this->tapduration;
+}

@@ -41,46 +41,28 @@ const char *ProductConfig::getServerVersion() {
 }
 
 bool ProductConfig::parse(DynamicJsonDocument *doc) {
-#ifdef DEBUG
-    Serial.println("[ProductConfig::parse]");
-#endif
 
     this->numProducts = 0;
     
 
     if ( doc->containsKey("version")) {
         this->serverVersion = (*doc)["version"].as<const char *>();
-#ifdef DEBUG
-        Serial.printf("[ProductConfig::parse] Server version: '%s'\n",this->serverVersion.c_str());
-#endif
     }
 
     if ( doc->containsKey("branding")) {
         this->serverBranding = (*doc)["branding"].as<const char *>();
-#ifdef DEBUG
-        Serial.printf("[ProductConfig::parse] Server branding: '%s'\n",this->serverBranding.c_str());
-#endif
     }
 
     if ( doc->containsKey("key") ) {
         this->key = (*doc)["key"].as<const char *>();    
-#ifdef DEBUG
-        Serial.printf("[ProductConfig::parse] Got encryption key\n");
-#endif
     }
 
     if ( ! doc->containsKey("switches")) {
-#ifdef DEBUG
-        Serial.printf("[ProductConfig::parse] No switches in config\n");
-#endif
         return true;        
     }
 
     JsonArray switches = (*doc)["switches"].as<JsonArray>();
     this->numProducts = switches.size() < PARTYTAP_CFG_MAX_PRODUCTS ? switches.size() : PARTYTAP_CFG_MAX_PRODUCTS;
-#ifdef DEBUG
-    Serial.printf("[ProductConfig::parse] num products = %d\n",this->numProducts);
-#endif
 
     for (int i=0;i < this->numProducts;i++) {
         JsonObject obj = switches[i];
@@ -94,17 +76,11 @@ bool ProductConfig::parse(DynamicJsonDocument *doc) {
     }
 
 
-#ifdef DEBUG
-    Serial.println("[ProductConfig::parse] succesfully completed");
-#endif
 
     return true;
 }
 
 bool ProductConfig::save() {
-#ifdef DEBUG
-    Serial.println("[ProductConfig::save]");
-#endif
     File file = LittleFS.open("/switches.json", "w");
     if (!file) {
         return false;
