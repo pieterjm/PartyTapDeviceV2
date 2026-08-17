@@ -33,6 +33,8 @@ String ui_PinEnteredPin = ""; // The actual entered PIN on the PIN Screen
 String ui_PinHidePin = "";    // a string of stars displayed on the screen
 TapConfig ui_tapConfig;
 bool bFreeDrink = false;
+int ui_tap_calibration_ticks = 0; // amount of ticks or time passed
+bool bAdminMode = false;
 Servo *ui_servo;
 bool ui_tap_running = false;
 long ui_tap_remaining_volume = 0;
@@ -49,8 +51,6 @@ float uiPaymentAmount = 0;
 #define UI_LABEL_TAP_FINISHED "ENJOY YOUR DRINK!"
 #define UI_LABEL_TAP_INSTRUCTION "TILT GLASS SLIGHTLY"
 #define UI_TAP_PROGRESS_INTERVAL 200
-
-#define runEvery(t) for (static uint16_t _lasttime; millis() - _lasttime >= (t); _lasttime += (t))
 
 //
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(TFT_CS, TFT_SCK, TFT_SDA0, TFT_SDA1, TFT_SDA2, TFT_SDA3);
@@ -73,9 +73,9 @@ lv_obj_t *ui_ButtonTapStart;
 lv_obj_t *ui_ScreenAdmin;
 lv_obj_t *ui_PanelAdminHeader;
 lv_obj_t *ui_LabelAdminHeader;
-lv_obj_t *ui_LabelAdminVersion;
-lv_obj_t *ui_LabelAdminServerVersion;
-lv_obj_t *ui_LabelAdminBranding;
+// lv_obj_t *ui_LabelAdminVersion;
+// lv_obj_t *ui_LabelAdminServerVersion;
+// lv_obj_t *ui_LabelAdminBranding;
 lv_obj_t *ui_LabelAdminWiFiStatus;
 lv_obj_t *ui_LabelAdminWebSocketStatus;
 lv_obj_t *ui_ButtonAdminConfig;
@@ -88,6 +88,9 @@ lv_obj_t *ui_ButtonAdminOpen;
 lv_obj_t *ui_LabelAdminOpen;
 lv_obj_t *ui_ButtonAdminClose;
 lv_obj_t *ui_LabelAdminClose;
+// lv_obj_t *ui_ButtonAdminCalibrate;
+// lv_obj_t *ui_LabelAdminCalibrate;
+lv_obj_t *ui_LabelAdminCalibrationTicks;
 
 // the enter pin screen
 lv_obj_t *ui_ScreenPin;
@@ -192,8 +195,12 @@ lv_obj_t *ui_LabelConfigButtonPINCancel;
 lv_obj_t *ui_LabelConfigPINMessage;
 lv_obj_t *ui_KeyboardConfig;
 
-#define BB_FGCOLOR 0xFFFFFF
-#define BB_BGCOLOR 0x4E4D4D
+// #define BB_FGCOLOR 0xFFFFFF
+// #define BB_BGCOLOR 0x4E4D4D
+
+#define BB_FGCOLOR 0x000000
+#define BB_BGCOLOR 0xFFFFFF
+
 #ifdef BRANDING_WHY2025
 #define BB_NAME "Why Drink? Why Not!"
 #else
@@ -234,11 +241,14 @@ void internal_tap_resume()
     internal_tap_open();
 }
 
-void ui_load_screen(lv_obj_t *screen) {
+void ui_load_screen(lv_obj_t *screen) {    
     if ( screen == ui_ScreenAdmin ) {
-        xTimerStart(networkStateReportTimer,10);
+        ui_tap_calibration_ticks = 0;
+        bAdminMode = true;
+        xTimerStart(networkStateReportTimer,portMAX_DELAY);
     } else {
-        xTimerStop(networkStateReportTimer,10);
+        bAdminMode = false;
+        xTimerStop(networkStateReportTimer,portMAX_DELAY);
     }
     lv_disp_load_scr(screen);
 }
@@ -259,27 +269,26 @@ void ui_init_tap_screen()  {
 // running in the main loop process, do not lock here
 void update_tapprogress()
 {
-    // // if no credit remaining, close the tap and return
-    // if (ui_tap_remaining_volume <= 0) {
-    //     internal_tap_close();
-    //     return;
-    // }    
+    static char ui_text[20];
 
-    // // load the tap screen if not loaded
-    if (ui_ScreenTap != lv_screen_active()) {
-        ui_load_screen(ui_ScreenTap);
-        ui_init_tap_screen();
+    // do nothing if the tap is not running
+    if ( ! ui_tap_running ) {
+        return;
     }
 
-    if ( ui_tap_running ) {
-        if ( ui_tapConfig.getControlMode() == CONTROL_MODE_TIME ) {
-            xTaskNotify(uiTaskHandle, UI_TAP_PROGRESS_INTERVAL,eSetBits);
-        }
+  
+    // send ticks event to count time if in time mode
+    if ( ui_tapConfig.getControlMode() == CONTROL_MODE_TIME ) {
+        xTaskNotify(uiTaskHandle, UI_TAP_PROGRESS_INTERVAL,eIncrement);
     }
 
-    // update the progress 
-    // debug("update_tapprogress","lv_bar_set_value %d",ui_tap_remaining_volume);
-    lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);    
+    // update the UI
+    if ( ui_ScreenTap == lv_screen_active() ) {
+        lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);    
+    } else if ( ui_ScreenAdmin == lv_screen_active() ) {
+        snprintf_P(ui_text, sizeof(ui_text), PSTR("Ticks: %d"), ui_tap_calibration_ticks);
+        lv_label_set_text(ui_LabelAdminCalibrationTicks,ui_text);
+    }
 }
 
 // called from UI thread, so lock before accessing variables
@@ -307,32 +316,34 @@ bool ui_add_tap_volume(int volume)
 }
 
 // update the state of the websocket in the admin screen
-bool ui_update_websocket_state(const char *s)
-{
-    lv_label_set_text_fmt(ui_LabelAdminWebSocketStatus, "WebSocket Status: %s", s);
-    return true;
-}
+// OBSOLETE
+// bool ui_update_websocket_state(const char *s)
+// {
+//     lv_label_set_text_fmt(ui_LabelAdminWebSocketStatus, "WebSocket Status: %s", s);
+//     return true;
+// }
 
+// OBSOLETE
 // update the status string of the wifi connection in the admin screeen
-bool ui_update_wifi_state(const char *s)
-{
-    lv_label_set_text_fmt(ui_LabelAdminWiFiStatus, "WiFi Status: %s", s);
-    return true;
-}
+// bool ui_update_wifi_state(const char *s)
+// {
+//     lv_label_set_text_fmt(ui_LabelAdminWiFiStatus, "WiFi Status: %s", s);
+//     return true;
+// }
 
 // update the server version string in the admin screen
-bool ui_update_server_version(const char *s)
-{
-    lv_label_set_text_fmt(ui_LabelAdminServerVersion, "Server version: %s", s);
-    return true;
-}
+// bool ui_update_server_version(const char *s)
+// {
+//     // lv_label_set_text_fmt(ui_LabelAdminServerVersion, "Server version: %s", s);
+//     return true;
+// }
 
 // update the server branding in the admin screen
-bool ui_update_server_branding(const char *s)
-{
-    lv_label_set_text_fmt(ui_LabelAdminBranding, "Server branding: %s", s);
-    return true;
-}
+// bool ui_update_server_branding(const char *s)
+// {
+//     // lv_label_set_text_fmt(ui_LabelAdminBranding, "Server branding: %s", s);
+//     return true;
+// }
 
 // Set the text on the admin screen for the wifi status
 void admin_report_wifi_state(wl_status_t status) {
@@ -345,6 +356,9 @@ void admin_report_wifi_state(wl_status_t status) {
             break;
         case WL_CONNECTED:
             lv_label_set_text(ui_LabelAdminWiFiStatus,"WiFi Status: Connected");
+            break;
+        case WL_STOPPED:
+            lv_label_set_text(ui_LabelAdminWiFiStatus,"WiFi Status: Stopped");
             break;
         case WL_CONNECTION_LOST:
         case WL_CONNECT_FAILED:
@@ -860,10 +874,12 @@ void ui_event_button_payment_enter_pin_clicked(lv_event_t *e)
 
 void ui_event_button_admin_open_clicked(lv_event_t *e)
 {
+    internal_tap_open();
 }
 
 void ui_event_button_admin_close_clicked(lv_event_t *e)
 {
+    internal_tap_close();
 }
 
 // get the current config and go to the config screen
@@ -895,6 +911,12 @@ void ui_event_button_admin_free_clicked(lv_event_t *e)
     bFreeDrink = true;
     ui_load_screen(ui_ScreenAbout);
 }
+
+// when the calibrate button is clicked on the admin screen, we'll allow a free drink
+// void ui_event_button_admin_calibrate_clicked(lv_event_t *e)
+// {
+//     bCalibrateTap = !bCalibrateTap;
+// }
 
 
 
@@ -979,6 +1001,7 @@ void ui_ScreenTap_screen_init(void)
 // Initialize the Admin screen
 void ui_ScreenAdmin_screen_init(void)
 {
+    int y = 0;
     ui_ScreenAdmin = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_ScreenAdmin, LV_OBJ_FLAG_SCROLLABLE); /// Flags
     lv_obj_set_style_bg_color(ui_ScreenAdmin, lv_color_hex(BB_FGCOLOR), LV_STATE_DEFAULT);
@@ -1002,66 +1025,121 @@ void ui_ScreenAdmin_screen_init(void)
     lv_obj_set_style_text_opa(ui_LabelAdminHeader, 255, LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelAdminHeader, &ui_font_UbuntuBoldItalic, 0);
 
-    ui_LabelAdminVersion = lv_label_create(ui_ScreenAdmin);
-    lv_obj_set_width(ui_LabelAdminVersion, LV_SIZE_CONTENT);  /// 1
-    lv_obj_set_height(ui_LabelAdminVersion, LV_SIZE_CONTENT); /// 1
-    lv_obj_set_x(ui_LabelAdminVersion, 10);
-    lv_obj_set_y(ui_LabelAdminVersion, 70);
-    lv_label_set_text_fmt(ui_LabelAdminVersion, "Firmware version: %s", PSTR(FIRMWARE_VERSION));
-    lv_obj_set_style_text_color(ui_LabelAdminVersion, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui_LabelAdminVersion, 255, LV_STATE_DEFAULT);
+
+    y = 70;
+    // ui_LabelAdminVersion = lv_label_create(ui_ScreenAdmin);
+    // lv_obj_set_width(ui_LabelAdminVersion, LV_SIZE_CONTENT);  /// 1
+    // lv_obj_set_height(ui_LabelAdminVersion, LV_SIZE_CONTENT); /// 1
+    // lv_obj_set_x(ui_LabelAdminVersion, 10);
+    // lv_obj_set_y(ui_LabelAdminVersion, y);
+    // lv_label_set_text_fmt(ui_LabelAdminVersion, "Firmware version: %s", PSTR(FIRMWARE_VERSION));
+    // lv_obj_set_style_text_color(ui_LabelAdminVersion, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_opa(ui_LabelAdminVersion, 255, LV_STATE_DEFAULT);
     // lv_obj_set_style_text_font(ui_LabelAdminVersion, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    // y += 30;
 
-    ui_LabelAdminServerVersion = lv_label_create(ui_ScreenAdmin);
-    lv_obj_set_width(ui_LabelAdminServerVersion, LV_SIZE_CONTENT);  /// 1
-    lv_obj_set_height(ui_LabelAdminServerVersion, LV_SIZE_CONTENT); /// 1
-    lv_obj_set_x(ui_LabelAdminServerVersion, 10);
-    lv_obj_set_y(ui_LabelAdminServerVersion, 100);
-    lv_label_set_text(ui_LabelAdminServerVersion, "Server version: ");
-    lv_obj_set_style_text_color(ui_LabelAdminServerVersion, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui_LabelAdminServerVersion, 255, LV_STATE_DEFAULT);
-    // lv_obj_set_style_text_font(ui_LabelAdminServerVersion, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    // ui_LabelAdminServerVersion = lv_label_create(ui_ScreenAdmin);
+    // lv_obj_set_width(ui_LabelAdminServerVersion, LV_SIZE_CONTENT);  /// 1
+    // lv_obj_set_height(ui_LabelAdminServerVersion, LV_SIZE_CONTENT); /// 1
+    // lv_obj_set_x(ui_LabelAdminServerVersion, 10);
+    // lv_obj_set_y(ui_LabelAdminServerVersion, y);
+    // lv_label_set_text(ui_LabelAdminServerVersion, "Server version: ");
+    // lv_obj_set_style_text_color(ui_LabelAdminServerVersion, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_opa(ui_LabelAdminServerVersion, 255, LV_STATE_DEFAULT);
+    // // lv_obj_set_style_text_font(ui_LabelAdminServerVersion, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    // y += 30;
 
-    ui_LabelAdminBranding = lv_label_create(ui_ScreenAdmin);
-    lv_obj_set_width(ui_LabelAdminBranding, LV_SIZE_CONTENT);  /// 1
-    lv_obj_set_height(ui_LabelAdminBranding, LV_SIZE_CONTENT); /// 1
-    lv_obj_set_x(ui_LabelAdminBranding, 10);
-    lv_obj_set_y(ui_LabelAdminBranding, 130);
-    lv_label_set_text(ui_LabelAdminBranding, "");
-    lv_obj_set_style_text_color(ui_LabelAdminBranding, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui_LabelAdminBranding, 255, LV_STATE_DEFAULT);
-    // lv_obj_set_style_text_font(ui_LabelAdminBranding, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    // ui_LabelAdminBranding = lv_label_create(ui_ScreenAdmin);
+    // lv_obj_set_width(ui_LabelAdminBranding, LV_SIZE_CONTENT);  /// 1
+    // lv_obj_set_height(ui_LabelAdminBranding, LV_SIZE_CONTENT); /// 1
+    // lv_obj_set_x(ui_LabelAdminBranding, 10);
+    // lv_obj_set_y(ui_LabelAdminBranding, y);
+    // lv_label_set_text(ui_LabelAdminBranding, "");
+    // lv_obj_set_style_text_color(ui_LabelAdminBranding, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_opa(ui_LabelAdminBranding, 255, LV_STATE_DEFAULT);
+    // // lv_obj_set_style_text_font(ui_LabelAdminBranding, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    // y += 30;
 
     ui_LabelAdminWiFiStatus = lv_label_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_LabelAdminWiFiStatus, LV_SIZE_CONTENT);  /// 1
     lv_obj_set_height(ui_LabelAdminWiFiStatus, LV_SIZE_CONTENT); /// 1
     lv_obj_set_x(ui_LabelAdminWiFiStatus, 10);
-    lv_obj_set_y(ui_LabelAdminWiFiStatus, 160);
+    lv_obj_set_y(ui_LabelAdminWiFiStatus, y);
     lv_label_set_text(ui_LabelAdminWiFiStatus, "WiFi Status: ");
     lv_obj_set_style_text_color(ui_LabelAdminWiFiStatus, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_LabelAdminWiFiStatus, 255, LV_STATE_DEFAULT);
     // lv_obj_set_style_text_font(ui_LabelAdminWiFiStatus, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    y += 30;
 
     ui_LabelAdminWebSocketStatus = lv_label_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_LabelAdminWebSocketStatus, LV_SIZE_CONTENT);  /// 1
     lv_obj_set_height(ui_LabelAdminWebSocketStatus, LV_SIZE_CONTENT); /// 1
     lv_obj_set_x(ui_LabelAdminWebSocketStatus, 10);
-    lv_obj_set_y(ui_LabelAdminWebSocketStatus, 190);
+    lv_obj_set_y(ui_LabelAdminWebSocketStatus, y);
     lv_label_set_text(ui_LabelAdminWebSocketStatus, "WebSocket Status: ");
     lv_obj_set_style_text_color(ui_LabelAdminWebSocketStatus, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_LabelAdminWebSocketStatus, 255, LV_STATE_DEFAULT);
     // lv_obj_set_style_text_font(ui_LabelAdminWebSocketStatus, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    y += 30;
 
+    // Calibration data
+    ui_LabelAdminCalibrationTicks = lv_label_create(ui_ScreenAdmin);
+    lv_obj_set_width(ui_LabelAdminCalibrationTicks, LV_SIZE_CONTENT);  /// 1
+    lv_obj_set_height(ui_LabelAdminCalibrationTicks, LV_SIZE_CONTENT); /// 1
+    lv_obj_set_x(ui_LabelAdminCalibrationTicks, 10);
+    lv_obj_set_y(ui_LabelAdminCalibrationTicks, y);
+    lv_label_set_text(ui_LabelAdminCalibrationTicks, "Ticks: ");
+    lv_obj_set_style_text_color(ui_LabelAdminCalibrationTicks, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui_LabelAdminCalibrationTicks, 255, LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_font(ui_LabelAdminCalibrationTicks, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    y += 30;
+
+    // free drink button
+    ui_ButtonAdminFree = lv_btn_create(ui_ScreenAdmin);
+    lv_obj_set_width(ui_ButtonAdminFree, 300);
+    lv_obj_set_height(ui_ButtonAdminFree, 70);
+    lv_obj_set_x(ui_ButtonAdminFree, 10);
+    lv_obj_set_y(ui_ButtonAdminFree, y);
+    lv_obj_set_align(ui_ButtonAdminFree, LV_ALIGN_TOP_LEFT);
+    lv_obj_add_flag(ui_ButtonAdminFree, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
+    lv_obj_clear_flag(ui_ButtonAdminFree, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
+    lv_obj_set_style_bg_color(ui_ButtonAdminFree, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_ButtonAdminFree, 255, LV_STATE_DEFAULT);
+    y += 70 + 10;
+  
+    ui_LabelAdminFree = lv_label_create(ui_ButtonAdminFree);
+    lv_obj_set_width(ui_LabelAdminFree, LV_SIZE_CONTENT);  /// 1
+    lv_obj_set_height(ui_LabelAdminFree, LV_SIZE_CONTENT); /// 1
+    lv_obj_set_align(ui_LabelAdminFree, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelAdminFree, "FREE");
+    lv_obj_set_style_text_color(ui_LabelAdminFree, lv_color_hex(BB_FGCOLOR), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui_LabelAdminFree, 255, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_LabelAdminFree, &ui_font_UbuntuBoldItalic, 0);
+
+    // tap open and close buttons
     ui_ButtonAdminOpen = lv_btn_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_ButtonAdminOpen, 145);
     lv_obj_set_height(ui_ButtonAdminOpen, 70);
     lv_obj_set_x(ui_ButtonAdminOpen, -10);
-    lv_obj_set_y(ui_ButtonAdminOpen, 220);
+    lv_obj_set_y(ui_ButtonAdminOpen, y);
     lv_obj_set_align(ui_ButtonAdminOpen, LV_ALIGN_TOP_RIGHT);
     lv_obj_add_flag(ui_ButtonAdminOpen, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
     lv_obj_clear_flag(ui_ButtonAdminOpen, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
     lv_obj_set_style_bg_color(ui_ButtonAdminOpen, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_ButtonAdminOpen, 255, LV_STATE_DEFAULT);
+
+    ui_ButtonAdminClose = lv_btn_create(ui_ScreenAdmin);
+    lv_obj_set_width(ui_ButtonAdminClose, 145);
+    lv_obj_set_height(ui_ButtonAdminClose, 70);
+    lv_obj_set_x(ui_ButtonAdminClose, 10);
+    lv_obj_set_y(ui_ButtonAdminClose, y);
+    lv_obj_set_align(ui_ButtonAdminClose, LV_ALIGN_TOP_LEFT);
+    lv_obj_add_flag(ui_ButtonAdminClose, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
+    lv_obj_clear_flag(ui_ButtonAdminClose, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
+    lv_obj_set_style_bg_color(ui_ButtonAdminClose, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_ButtonAdminClose, 255, LV_STATE_DEFAULT);
+    // set the location for the next item
+    y += 70 + 10;
 
     ui_LabelAdminOpen = lv_label_create(ui_ButtonAdminOpen);
     lv_obj_set_width(ui_LabelAdminOpen, LV_SIZE_CONTENT);  /// 1
@@ -1072,17 +1150,6 @@ void ui_ScreenAdmin_screen_init(void)
     lv_obj_set_style_text_opa(ui_LabelAdminOpen, 255, LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelAdminOpen, &ui_font_UbuntuBoldItalic, 0);
 
-    ui_ButtonAdminClose = lv_btn_create(ui_ScreenAdmin);
-    lv_obj_set_width(ui_ButtonAdminClose, 145);
-    lv_obj_set_height(ui_ButtonAdminClose, 70);
-    lv_obj_set_x(ui_ButtonAdminClose, 10);
-    lv_obj_set_y(ui_ButtonAdminClose, 220);
-    lv_obj_set_align(ui_ButtonAdminClose, LV_ALIGN_TOP_LEFT);
-    lv_obj_add_flag(ui_ButtonAdminClose, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
-    lv_obj_clear_flag(ui_ButtonAdminClose, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
-    lv_obj_set_style_bg_color(ui_ButtonAdminClose, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ButtonAdminClose, 255, LV_STATE_DEFAULT);
-
     ui_LabelAdminClose = lv_label_create(ui_ButtonAdminClose);
     lv_obj_set_width(ui_LabelAdminClose, LV_SIZE_CONTENT);  /// 1
     lv_obj_set_height(ui_LabelAdminClose, LV_SIZE_CONTENT); /// 1
@@ -1092,25 +1159,29 @@ void ui_ScreenAdmin_screen_init(void)
     lv_obj_set_style_text_opa(ui_LabelAdminClose, 255, LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelAdminClose, &ui_font_UbuntuBoldItalic, 0);
 
-    ui_ButtonAdminFree = lv_btn_create(ui_ScreenAdmin);
-    lv_obj_set_width(ui_ButtonAdminFree, 300);
-    lv_obj_set_height(ui_ButtonAdminFree, 70);
-    lv_obj_set_x(ui_ButtonAdminFree, 10);
-    lv_obj_set_y(ui_ButtonAdminFree, 300);
-    lv_obj_set_align(ui_ButtonAdminFree, LV_ALIGN_TOP_LEFT);
-    lv_obj_add_flag(ui_ButtonAdminFree, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
-    lv_obj_clear_flag(ui_ButtonAdminFree, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
-    lv_obj_set_style_bg_color(ui_ButtonAdminFree, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_ButtonAdminFree, 255, LV_STATE_DEFAULT);
-  
-    ui_LabelAdminFree = lv_label_create(ui_ButtonAdminFree);
-    lv_obj_set_width(ui_LabelAdminFree, LV_SIZE_CONTENT);  /// 1
-    lv_obj_set_height(ui_LabelAdminFree, LV_SIZE_CONTENT); /// 1
-    lv_obj_set_align(ui_LabelAdminFree, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelAdminFree, "FREE");
-    lv_obj_set_style_text_color(ui_LabelAdminFree, lv_color_hex(BB_FGCOLOR), LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(ui_LabelAdminFree, 255, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_LabelAdminFree, &ui_font_UbuntuBoldItalic, 0);
+    // // calibrate buttoin
+    // ui_ButtonAdminCalibrate = lv_btn_create(ui_ScreenAdmin);
+    // lv_obj_set_width(ui_ButtonAdminCalibrate, 300);
+    // lv_obj_set_height(ui_ButtonAdminCalibrate, 70);
+    // lv_obj_set_x(ui_ButtonAdminCalibrate, 10);
+    // lv_obj_set_y(ui_ButtonAdminCalibrate, y);
+    // lv_obj_set_align(ui_ButtonAdminCalibrate, LV_ALIGN_TOP_LEFT);
+    // lv_obj_add_flag(ui_ButtonAdminCalibrate, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
+    // lv_obj_clear_flag(ui_ButtonAdminCalibrate, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
+    // lv_obj_set_style_bg_color(ui_ButtonAdminCalibrate, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
+    // lv_obj_set_style_bg_opa(ui_ButtonAdminCalibrate, 255, LV_STATE_DEFAULT);
+    // // set the location for the next item
+    // y += 70 + 10;
+
+    // ui_LabelAdminCalibrate = lv_label_create(ui_ButtonAdminCalibrate);
+    // lv_obj_set_width(ui_LabelAdminCalibrate, LV_SIZE_CONTENT);  /// 1
+    // lv_obj_set_height(ui_LabelAdminCalibrate, LV_SIZE_CONTENT); /// 1
+    // lv_obj_set_align(ui_LabelAdminCalibrate, LV_ALIGN_CENTER);
+    // lv_label_set_text(ui_LabelAdminCalibrate, "CALIBRATE");
+    // lv_obj_set_style_text_color(ui_LabelAdminCalibrate, lv_color_hex(BB_FGCOLOR), LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_opa(ui_LabelAdminCalibrate, 255, LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_font(ui_LabelAdminCalibrate, &ui_font_UbuntuBoldItalic, 0);
+
 
     ui_ButtonAdminConfig = lv_btn_create(ui_ScreenAdmin);
     lv_obj_set_width(ui_ButtonAdminConfig, 95);
@@ -1157,7 +1228,7 @@ void ui_ScreenAdmin_screen_init(void)
     lv_obj_add_event_cb(ui_ButtonAdminCancel, ui_event_ButtonAdminCancelClicked, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(ui_ButtonAdminOpen, ui_event_button_admin_open_clicked, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(ui_ButtonAdminClose, ui_event_button_admin_close_clicked, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(ui_ButtonAdminFree, ui_event_button_admin_free_clicked, LV_EVENT_CLICKED, NULL);
+    // lv_obj_add_event_cb(ui_ButtonAdminCalibrate, ui_event_button_admin_calibrate_clicked, LV_EVENT_CLICKED, NULL);
 }
 
 void ui_ScreenPin_screen_init(void)
@@ -1797,7 +1868,7 @@ void ui_ScreenConfig_screen_init(void)
     lv_obj_set_height(ui_LabelConfigVolumePerUnit, LV_SIZE_CONTENT); /// 1
     lv_obj_set_x(ui_LabelConfigVolumePerUnit, 10);
     lv_obj_set_y(ui_LabelConfigVolumePerUnit, 195);
-    lv_label_set_text(ui_LabelConfigVolumePerUnit, "Volume per Pulse/Second");
+    lv_label_set_text(ui_LabelConfigVolumePerUnit, "Ticks for 400ml");
     lv_obj_set_style_text_color(ui_LabelConfigVolumePerUnit, lv_color_hex(BB_BGCOLOR), LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_LabelConfigVolumePerUnit, 255, LV_STATE_DEFAULT);
     //    lv_obj_set_style_text_font(ui_LabelConfigVolumePerUnit, &lv_font_montserrat_16, LV_STATE_DEFAULT);
@@ -2206,7 +2277,6 @@ void ui_hide_message_timer_cb(TimerHandle_t timer)
 
 void ui_back_to_about_timer_cb(TimerHandle_t timer)
 {
-    Serial.println("back to about screen");
     ui_queue_send_message(LOAD_ABOUT_SCREEN, 0);
 }
 
@@ -2237,8 +2307,9 @@ void ui_task(void *parameters)
     debug("ui_loop","calling network_restart");
     network_connect(ui_tapConfig);
     
-    xTimerStart(lvglTimer, 0);
-    
+    xTimerStart(lvglTimer, portMAX_DELAY);
+    xTimerStart(progressTimer, portMAX_DELAY);
+               
 
     while (1 == 1)
     {
@@ -2250,26 +2321,28 @@ void ui_task(void *parameters)
         // check for pulses or time pulses
         uint32_t flowValue = ulNotifiedValue & TASK_NOTIFICATION_PULSE_MASK;
         if (flowValue > 0) {
-            ui_tap_remaining_volume -= flowValue; // * ui_tapConfig.getVolumePerUnit();
-            Serial.printf("%d %d\n",flowValue,ui_tap_remaining_volume);
-            xTimerReset(tapTimeoutTimer,portMAX_DELAY);
+            if ( bAdminMode ) {                
+                ui_tap_calibration_ticks += flowValue;
+            } else {
+                ui_tap_remaining_volume -= flowValue;
+                
+                xTimerReset(tapTimeoutTimer,portMAX_DELAY);
+                if (ui_tap_remaining_volume <= 0) {
+                    debug("ui_task","No volume remaining");
+                    ui_tap_remaining_volume = 0;
+                    internal_tap_close();
 
-            if (ui_tap_remaining_volume <= 0) {
-                debug("ui_task","No volume remaining");
-                ui_tap_remaining_volume = 0;
-                internal_tap_close();
-
-                // no more volume to tap, hide the progress bar, say a goodbye message and start a timer yto go back to the start.
-                lv_obj_add_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
-                lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_FINISHED);
-                lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+                    // no more volume to tap, hide the progress bar, say a goodbye message and start a timer yto go back to the start.
+                    lv_obj_add_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
+                    lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_FINISHED);
+                    lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
 
 
-                // only start the timer when not active, otherwise we keep resetting the timer and never go back to the about screen.
-                if ( xTimerIsTimerActive(backToAboutTimer) == pdFALSE ) {              
-                    xTimerReset(backToAboutTimer,portMAX_DELAY);
+                    // only start the timer when not active, otherwise we keep resetting the timer and never go back to the about screen.
+                    if ( xTimerIsTimerActive(backToAboutTimer) == pdFALSE ) {              
+                        xTimerReset(backToAboutTimer,portMAX_DELAY);
+                    }
                 }
-                xTimerStop(progressTimer, portMAX_DELAY);
             }
         }
 
@@ -2279,15 +2352,23 @@ void ui_task(void *parameters)
             switch (msg.type)
             {
             case ADD_VOLUME:
+                // if not on the tap screeen init tap screen and navigate to the tap screen
 
-                ui_tap_remaining_volume += (msg.data * ui_tapConfig.getVolumePerUnit() )/ 100;
+                ui_tap_remaining_volume += (msg.data * ui_tapConfig.getVolumePerUnit() )/ 400;
                 lv_bar_set_range(ui_BarTapProgress, 0, ui_tap_remaining_volume);
-                xTimerReset(progressTimer, portMAX_DELAY);
                 xTimerReset(tapTimeoutTimer,portMAX_DELAY);
 
+                
                 if ( ui_tapConfig.getControlMode() == CONTROL_MODE_PULSE ) {
                     internal_tap_open();                
                 }
+
+                if ( lv_screen_active() != ui_ScreenTap ) {
+                    ui_init_tap_screen();
+                    ui_load_screen(ui_ScreenTap);
+                }
+
+
                 break;
             case SHOW_PAYMENT_BUTTONS:
                 show_payment_buttons();
@@ -2296,7 +2377,6 @@ void ui_task(void *parameters)
                 hide_payment_buttons();
                 break;
             case LOAD_ABOUT_SCREEN:
-                Serial.println("Load about screen");
                 ui_load_screen(ui_ScreenAbout);
                 break;
             case HIDE_MESSAGE:
@@ -2325,7 +2405,6 @@ void ui_task(void *parameters)
 
                 // only start the timer when not active, otherwise we keep resetting the timer and never go back to the about screen.
                 xTimerReset(backToAboutTimer,portMAX_DELAY);
-                xTimerStop(progressTimer, portMAX_DELAY);
                 
                 break;
             case OPEN_TAP:
@@ -2383,6 +2462,7 @@ void ui_task(void *parameters)
         if (ulNotifiedValue & TASK_NOTIFICATION_PROGRESS)
         {
             update_tapprogress();
+            ulNotifiedValue |= TASK_NOTIFICATION_LVGL;
         }
 
         // general lvgl handler

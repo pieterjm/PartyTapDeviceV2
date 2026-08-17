@@ -339,7 +339,6 @@ bool parse_received_text_message(const char *payload, int length)
     if (error != DeserializationError::Ok)
     {
         debug("ws_event", "Deserialisation error of websocket message");
-        Serial.println(payload);
         return false;
     }
     const char *eventtype = doc["event"].as<const char *>();
@@ -365,7 +364,6 @@ bool parse_received_text_message(const char *payload, int length)
         networkPaymentRequest = doc["pr"].as<const char *>();
         networkPaymentHash = doc["payment_hash"].as<const char *>();
         debug("pr","pr length = %d",networkPaymentRequest.length());
-        Serial.println(networkPaymentRequest);
 
         // start an expire invoice task and stop the invoice received timer
         xTimerStop(networkInvoiceReceivedTimer, 1000);
