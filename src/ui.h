@@ -47,7 +47,7 @@ enum UIQueueMessageType
     STOP_TAP,
     OPEN_TAP,
     CLOSE_TAP,
-    FLOW_TAP_TIMEOUT,
+    TAP_TIMEOUT,
     FREE_DRINK    
 };
 
