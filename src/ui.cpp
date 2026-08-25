@@ -406,6 +406,21 @@ bool ui_add_tap_volume(int volume)
     return true;
 }
 
+// report the RSSI value
+void admin_report_wifi_rssi(int8_t rssi) {
+    if ( rssi < -90 ) {
+        lv_label_set_text_fmt(ui_LabelAdminWiFiStrength,"WiFi Signal Strength: unusable %d dBm",rssi);
+    } else if ( rssi < -80 ) {
+        lv_label_set_text_fmt(ui_LabelAdminWiFiStrength,"WiFi Signal Strength: bad %d dBm",rssi);
+    } else if ( rssi < -70 ) {
+        lv_label_set_text_fmt(ui_LabelAdminWiFiStrength,"WiFi Signal Strength: poor %d dBm",rssi);
+    } else if ( rssi < -60 ) {
+        lv_label_set_text_fmt(ui_LabelAdminWiFiStrength,"WiFi Signal Strength: good %d dBm",rssi);
+    } else if ( rssi < -50 ) {
+        lv_label_set_text_fmt(ui_LabelAdminWiFiStrength,"WiFi Signal Strength: excellent %d dBm",rssi);
+    }
+}
+
 // Set the text on the admin screen for the wifi status
 void admin_report_wifi_state(wl_status_t status) {
     switch ( status ) {
@@ -2599,6 +2614,9 @@ void ui_task(void *parameters)
                 break;
             case REPORT_WIFI_STATE:
                 admin_report_wifi_state((wl_status_t)msg.data);
+                break;
+            case REPORT_WIFI_RSSI:
+                admin_report_wifi_rssi((int8_t)msg.data);
                 break;
             case REPORT_WEBSOCKET_STATE:
                 admin_report_websocket_state((NetworkWebSocketState)msg.data);

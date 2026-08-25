@@ -81,6 +81,7 @@ void network_report_state() {
     debug("network_report_state","Reporting network state");
     ui_queue_send_message(REPORT_WIFI_STATE,WiFi.status());
     ui_queue_send_message(REPORT_WEBSOCKET_STATE, networkWebSocketState);
+    ui_queue_send_message(REPORT_WIFI_RSSI,WiFi.RSSI());
 }
 
 
