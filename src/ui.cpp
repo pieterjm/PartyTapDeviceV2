@@ -46,7 +46,7 @@ int ui_tap_calibration_ticks = 0; // amount of ticks or time passed
 bool bAdminMode = false;
 Servo *ui_servo;
 bool ui_tap_running = false;
-long ui_tap_remaining_volume = 0;
+long ui_tap_remaining_ticks = 0;
 int ui_selected_product = 0;
 
 SemaphoreHandle_t uiPaymentDataSemaphore;
@@ -58,9 +58,11 @@ float uiPaymentAmount = 0;
 #define UI_BUTTON_TAP_PAUSE "PAUSE"
 #define UI_BUTTON_TAP_RESUME "RESUME"
 #define UI_LABEL_TAP_FINISHED "ENJOY YOUR DRINK!"
-#define UI_LABEL_TAP_INSTRUCTION "HOLD YOUR GLASS UNDER THE TAP AND PRESS START"
+#define UI_LABEL_TAP_INSTRUCTION_BUTTON "HOLD YOUR GLASS UNDER THE TAP AND PRESS START"
+#define UI_LABEL_TAP_INSTRUCTION_NO_BUTTON "HOLD YOUR GLASS UNDER THE TAP AND PULL THE HANDLE TO START"
 #define UI_LABEL_TAP_TIMEOUT "TIMEOUT, RETURNING TO START"
 #define UI_TAP_PROGRESS_INTERVAL 200
+#define TAP_TAP_TIMEOUT_MS 60000 // the number of milliseconds of inactivity after which the tap returns to the start page
 
 //
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(TFT_CS, TFT_SCK, TFT_SDA0, TFT_SDA1, TFT_SDA2, TFT_SDA3);
@@ -255,6 +257,61 @@ void internal_tap_resume()
     internal_tap_open();
 }
 
+// show the product selection buttons
+void show_payment_buttons()
+{
+    if (xSemaphoreTake(productConfigSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        switch (productConfig.getNumProducts())
+        {
+        case 1:
+            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
+            lv_obj_set_width(ui_ButtonAboutOne, SCREEN_WIDTH - 20);
+            lv_obj_set_x(ui_ButtonAboutOne, 0);
+            lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
+            break;
+        case 2:
+            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
+            lv_label_set_text(ui_LabelAboutTwo, productConfig.getProduct(1)->getLabel());
+            lv_obj_set_x(ui_ButtonAboutOne, -1 * ( SCREEN_WIDTH / 4 + 5));
+            lv_obj_set_x(ui_ButtonAboutTwo, SCREEN_WIDTH / 4 + 5);
+            lv_obj_set_width(ui_ButtonAboutOne, SCREEN_WIDTH / 2 - 10);
+            lv_obj_set_width(ui_ButtonAboutTwo, SCREEN_WIDTH / 2 - 10);
+            lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
+            break;
+        case 3:
+            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
+            lv_label_set_text(ui_LabelAboutTwo, productConfig.getProduct(1)->getLabel());
+            lv_label_set_text(ui_LabelAboutThree, productConfig.getProduct(2)->getLabel());
+            lv_obj_set_x(ui_ButtonAboutOne, -1 * ((SCREEN_WIDTH - 20) / 3 + 5));
+            lv_obj_set_x(ui_ButtonAboutTwo, 0);
+            lv_obj_set_x(ui_ButtonAboutThree, (SCREEN_WIDTH - 20) / 3 + 5);
+            lv_obj_set_width(ui_ButtonAboutOne, (SCREEN_WIDTH - 20)/ 3);
+            lv_obj_set_width(ui_ButtonAboutTwo, (SCREEN_WIDTH - 20)/ 3);
+            lv_obj_set_width(ui_ButtonAboutThree, (SCREEN_WIDTH - 20)/ 3);
+            lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
+            break;
+        default:
+            lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(ui_LabelAboutMessage,"");
+            break;
+        }
+        xSemaphoreGive(productConfigSemaphore);
+    }
+}
+
+// load and initialise a specific screen
 void ui_load_screen(lv_obj_t *screen) {    
     bAdminMode = false;
     xTimerStop(networkStateReportTimer,portMAX_DELAY);
@@ -271,20 +328,28 @@ void ui_load_screen(lv_obj_t *screen) {
         lv_obj_set_y(ui_ImageAbout,-20);
         lv_obj_set_align(ui_ImageAbout,LV_ALIGN_BOTTOM_MID);
 
-        lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
+        show_payment_buttons();
     } else if ( screen == ui_ScreenTap ) {
         lv_obj_set_y(ui_LabelTapInstructions,20);
         lv_obj_clear_flag(ui_ImageAbout,LV_OBJ_FLAG_CLICKABLE);
 
-        lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION);
         lv_obj_clear_flag(ui_BarTapProgress, LV_OBJ_FLAG_HIDDEN);
-        if ( ui_tapConfig.getControlMode() == CONTROL_MODE_TIME ) {
-            lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
-            lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+        switch ( ui_tapConfig.getControlMode() ) {
+            case CONTROL_MODE_TIME:
+                lv_label_set_text(ui_LabelTapStart, UI_BUTTON_TAP_TAP);
+                lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION_BUTTON);
+                lv_obj_clear_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+                break;
+            case CONTROL_MODE_PULSE:
+                lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+                lv_label_set_text(ui_LabelTapInstructions, UI_LABEL_TAP_INSTRUCTION_NO_BUTTON);
+                break;
+            default:
+                lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
+                lv_label_set_text(ui_LabelTapInstructions, "");
+                break;
         }
-        lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);    
+        lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_ticks, LV_ANIM_OFF);    
     }
 
 
@@ -312,7 +377,7 @@ void update_tapprogress()
 
     // update the UI
     if ( ui_ScreenTap == lv_screen_active() ) {
-        lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_volume, LV_ANIM_OFF);    
+        lv_bar_set_value(ui_BarTapProgress, ui_tap_remaining_ticks, LV_ANIM_OFF);    
     } else if ( ui_ScreenAdmin == lv_screen_active() ) {
         snprintf_P(ui_text, sizeof(ui_text), PSTR("Calibration ticks: %d"), ui_tap_calibration_ticks);
         lv_label_set_text(ui_LabelAdminCalibrationTicks,ui_text);
@@ -336,42 +401,10 @@ bool internal_verify_pin(String entered_pin)
 
 bool ui_add_tap_volume(int volume)
 {
-    debug("ui_add_tap_volume","Enter function");
-    ui_tap_remaining_volume += volume;
-    // lv_bar_set_range(ui_BarTapProgress, 0, ui_tap_remaining_volume);
+    ui_tap_remaining_ticks += volume;
     lv_bar_set_range(ui_BarTapProgress, 0, 1000);
     return true;
 }
-
-// update the state of the websocket in the admin screen
-// OBSOLETE
-// bool ui_update_websocket_state(const char *s)
-// {
-//     lv_label_set_text_fmt(ui_LabelAdminWebSocketStatus, "WebSocket Status: %s", s);
-//     return true;
-// }
-
-// OBSOLETE
-// update the status string of the wifi connection in the admin screeen
-// bool ui_update_wifi_state(const char *s)
-// {
-//     lv_label_set_text_fmt(ui_LabelAdminWiFiStatus, "WiFi Status: %s", s);
-//     return true;
-// }
-
-// update the server version string in the admin screen
-// bool ui_update_server_version(const char *s)
-// {
-//     // lv_label_set_text_fmt(ui_LabelAdminServerVersion, "Server version: %s", s);
-//     return true;
-// }
-
-// update the server branding in the admin screen
-// bool ui_update_server_branding(const char *s)
-// {
-//     // lv_label_set_text_fmt(ui_LabelAdminBranding, "Server branding: %s", s);
-//     return true;
-// }
 
 // Set the text on the admin screen for the wifi status
 void admin_report_wifi_state(wl_status_t status) {
@@ -579,59 +612,7 @@ void ui_queue_send_message(UIQueueMessageType type, uint16_t data)
     }
 }
 
-// show the product selection buttons
-void show_payment_buttons()
-{
-    if (xSemaphoreTake(productConfigSemaphore, portMAX_DELAY) == pdTRUE)
-    {
-        switch (productConfig.getNumProducts())
-        {
-        case 1:
-            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
-            lv_obj_set_width(ui_ButtonAboutOne, SCREEN_WIDTH);
-            lv_obj_set_x(ui_ButtonAboutOne, 0);
-            lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
-            break;
-        case 2:
-            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
-            lv_label_set_text(ui_LabelAboutTwo, productConfig.getProduct(1)->getLabel());
-            lv_obj_set_x(ui_ButtonAboutOne, -1 * ( SCREEN_WIDTH / 4 + 5));
-            lv_obj_set_x(ui_ButtonAboutTwo, SCREEN_WIDTH / 4 + 5);
-            lv_obj_set_width(ui_ButtonAboutOne, SCREEN_WIDTH / 2 - 10);
-            lv_obj_set_width(ui_ButtonAboutTwo, SCREEN_WIDTH / 2 - 10);
-            lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
-            break;
-        case 3:
-            lv_obj_clear_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(ui_LabelAboutOne, productConfig.getProduct(0)->getLabel());
-            lv_label_set_text(ui_LabelAboutTwo, productConfig.getProduct(1)->getLabel());
-            lv_label_set_text(ui_LabelAboutThree, productConfig.getProduct(2)->getLabel());
-            lv_obj_set_x(ui_ButtonAboutOne, -1 * ((SCREEN_WIDTH - 20) / 3 + 5));
-            lv_obj_set_x(ui_ButtonAboutTwo, 0);
-            lv_obj_set_x(ui_ButtonAboutThree, (SCREEN_WIDTH - 20) / 3 + 5);
-            lv_obj_set_width(ui_ButtonAboutOne, (SCREEN_WIDTH - 20)/ 3);
-            lv_obj_set_width(ui_ButtonAboutTwo, (SCREEN_WIDTH - 20)/ 3);
-            lv_obj_set_width(ui_ButtonAboutThree, (SCREEN_WIDTH - 20)/ 3);
-            lv_label_set_text(ui_LabelAboutMessage,"PRESS BUTTON TO START");
-            break;
-        default:
-            lv_obj_add_flag(ui_ButtonAboutOne, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_ButtonAboutTwo, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(ui_ButtonAboutThree, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(ui_LabelAboutMessage,"");
-            break;
-        }
-        xSemaphoreGive(productConfigSemaphore);
-    }
-}
+
 
 // Close button on the config screen clicked
 void ui_event_button_config_servo_close_clicked(lv_event_t *e)
@@ -1059,7 +1040,7 @@ void ui_ScreenTap_screen_init(void)
     lv_obj_set_height(ui_LabelTapStart, LV_SIZE_CONTENT); /// 1
     lv_obj_set_align(ui_LabelTapStart, LV_ALIGN_CENTER);
     // lv_obj_set_y(ui_LabelTapStart, -50);
-    lv_label_set_text(ui_LabelTapStart, UI_LABEL_TAP_INSTRUCTION);
+    lv_label_set_text(ui_LabelTapStart, "");
     lv_obj_set_style_text_color(ui_LabelTapStart, lv_color_hex(COLOR_BUTTON_TEXT), LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_LabelTapStart, 255, LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelTapStart, &lv_font_montserrat_36, LV_STATE_DEFAULT);
@@ -2548,12 +2529,12 @@ void ui_task(void *parameters)
             if ( bAdminMode ) {                
                 ui_tap_calibration_ticks += flowValue;
             } else {
-                ui_tap_remaining_volume -= flowValue;
+                ui_tap_remaining_ticks -= flowValue;
                 
                 xTimerReset(tapTimeoutTimer,portMAX_DELAY);
-                if (ui_tap_remaining_volume <= 0) {
+                if (ui_tap_remaining_ticks <= 0) {
                     debug("ui_task","No volume remaining");
-                    ui_tap_remaining_volume = 0;
+                    ui_tap_remaining_ticks = 0;
                     internal_tap_close();
 
                     // no more volume to tap, hide the progress bar, say a goodbye message and start a timer yto go back to the start.
@@ -2566,6 +2547,8 @@ void ui_task(void *parameters)
 #endif
                     lv_obj_add_flag(ui_ButtonTapStart, LV_OBJ_FLAG_HIDDEN);
 
+                    // stop the tap timeout timer
+                    xTimerStop(tapTimeoutTimer,portMAX_DELAY);
 
                     // only start the timer when not active, otherwise we keep resetting the timer and never go back to the about screen.
                     if ( xTimerIsTimerActive(backToAboutTimer) == pdFALSE ) {              
@@ -2583,8 +2566,8 @@ void ui_task(void *parameters)
             case ADD_VOLUME:
                 // if not on the tap screeen init tap screen and navigate to the tap screen
 
-                ui_tap_remaining_volume += (msg.data * ui_tapConfig.getVolumePerUnit() )/ TICKS_VOLUME;
-                lv_bar_set_range(ui_BarTapProgress, 0, ui_tap_remaining_volume);
+                ui_tap_remaining_ticks += (msg.data * ui_tapConfig.getVolumePerUnit() )/ TICKS_VOLUME;
+                lv_bar_set_range(ui_BarTapProgress, 0, ui_tap_remaining_ticks);
                 xTimerReset(tapTimeoutTimer,portMAX_DELAY);
 
                 
@@ -2621,7 +2604,7 @@ void ui_task(void *parameters)
                 admin_report_websocket_state((NetworkWebSocketState)msg.data);
                 break;
             case TAP_TIMEOUT:
-                ui_tap_remaining_volume = 0;
+                ui_tap_remaining_ticks = 0;
                 internal_tap_close();
 
                 // no more volume to tap, hide the progress bar, say a goodbye message and start a timer yto go back to the start.
@@ -2816,7 +2799,7 @@ void ui_task_init()
     }
 
     // tap timeout timer
-    tapTimeoutTimer = xTimerCreate("Tap Timeout Timer",pdMS_TO_TICKS(60000),pdFALSE,NULL,ui_tap_timeout_cb);
+    tapTimeoutTimer = xTimerCreate("Tap Timeout Timer",pdMS_TO_TICKS(TAP_TAP_TIMEOUT_MS),pdFALSE,NULL,ui_tap_timeout_cb);
 
     // progress bar timer
     progressTimer = xTimerCreate("Progress timer", pdMS_TO_TICKS(UI_TAP_PROGRESS_INTERVAL), pdTRUE, NULL, ui_progress_timer_cb);
