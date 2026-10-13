@@ -123,9 +123,8 @@ void setup() {
     ui_task_init();
 
     // initialise and start NFC
-    if ( nfc_task_init() ) {
-        nfc_task_start();
-    }
+    nfc_task_init();
+    nfc_task_start();
 
     // network start
     network_task_start();

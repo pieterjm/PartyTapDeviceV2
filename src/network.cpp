@@ -5,6 +5,7 @@
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include "ui.h"
+#include "nfc.h"
 #include "productconfig.h"
 #include <HTTPUpdate.h>
 
@@ -223,6 +224,7 @@ void _network_send_invoice_request(int productid) {
     // send the message dependent on the payment mode
     switch ( networkPaymentMode ) {
         case PAYMENT_MODE_WIFI:
+            debug("_network_send_invoice_request","Sending invoice request via WiFi");
             webSocket.sendTXT(message.c_str());
             break;
         case PAYMENT_MODE_SERIAL:
@@ -394,6 +396,8 @@ bool parse_received_text_message(const char *payload, int length)
 
         debug("ws_event", "calling ui_init_and_load_payment_screen");
         ui_init_and_load_payment_screen(networkPaymentRequest, currency, amount);
+        nfc_set_lightning_invoice(networkPaymentRequest);
+
     }
     else if (strcmp(eventtype, WS_EVENTTYPE_PAID) == 0)
     {
@@ -518,8 +522,8 @@ void _network_wifi_check_websocket() {
         String wspath = "/partytap/api/v1/ws/" + deviceid;
 
         webSocket.beginSSL(lnbitshost, 443, wspath);
-        webSocket.enableHeartbeat(5000, 2000, 1);
-        webSocket.setReconnectInterval(500);
+        //webSocket.enableHeartbeat(5000, 2000, 1);
+        //webSocket.setReconnectInterval(500);
     }
 }
 
@@ -532,11 +536,11 @@ void _network_wifi_check()
             // ui_queue_send_message(SHOW_MESSAGE_WIFI_NOT_CONNECTED,5000);
             break;
         case WL_STOPPED:
-            debug("checkNetwork","Starting WiFi");\
+            debug("checkNetwork","Starting WiFi");
             _network_wifi_start();
             break;
         case  WL_CONNECTED:
-            debug("checkNetwork","WL_CONNECTED");
+            //debug("checkNetwork","WL_CONNECTED");
             _network_wifi_check_websocket();
             break;
         case WL_DISCONNECTED:
@@ -602,9 +606,8 @@ void network_task(void *parameters) {
     struct networkQueueMessage msg;
 
 
-    xTimerStart(networkCheckTimer, 1000);
-    xTimerStart(networkLoopTimer,1000);
-    
+    xTimerStart(networkCheckTimer, portMAX_DELAY);
+    xTimerStart(networkLoopTimer, portMAX_DELAY);    
 
     webSocket.onEvent(ws_event);
             
@@ -737,13 +740,13 @@ void network_task_init() {
     }
 
     // create a timer to check the status of the network and the websocket
-    networkCheckTimer = xTimerCreate("network check timer", pdMS_TO_TICKS(5000), pdTRUE, NULL, network_check_timer_cb);
+    networkCheckTimer = xTimerCreate("network check timer", pdMS_TO_TICKS(10000), pdTRUE, NULL, network_check_timer_cb);
     if ( !networkCheckTimer) {
         debug("network_init", "Could not create network check timer");
     }
 
     // create a timer to check the status of the network and the websocket
-    networkLoopTimer = xTimerCreate("network loop timer", 100, pdTRUE, NULL, network_loop_timer_cb);
+    networkLoopTimer = xTimerCreate("network loop timer", 50, pdTRUE, NULL, network_loop_timer_cb);
     if ( ! networkLoopTimer) {
         debug("network_init", "Could not create network loop timer");
     }
