@@ -85,7 +85,7 @@ lv_obj_t *ui_ButtonTapStart;
 lv_obj_t *ui_ScreenAdmin;
 // lv_obj_t *ui_PanelAdminHeader;
 // lv_obj_t *ui_LabelAdminHeader;
-// lv_obj_t *ui_LabelAdminVersion;
+lv_obj_t *ui_LabelFirmwareVersion;
 // lv_obj_t *ui_LabelAdminServerVersion;
 // lv_obj_t *ui_LabelAdminBranding;
 lv_obj_t *ui_LabelAdminWiFiStatus;
@@ -526,6 +526,7 @@ void set_message(uiQueueMessage msg)
         break;
     case SHOW_MESSAGE_UPDATE_PROGRESS:
         // set_text_fmt is used below to format this message
+        message = "Progress";
         break;
     case SHOW_MESSAGE_VERIFY_FAILED:
         message = "VERIFY FAILED";
@@ -551,6 +552,8 @@ void set_message(uiQueueMessage msg)
     if ( msg.type == SHOW_MESSAGE_UPDATE_PROGRESS ) {
         lv_label_set_text_fmt(ui_LabelAboutMessage, "UPDATE PROGRESS %d %%",msg.data);
         lv_label_set_text_fmt(ui_LabelPaymentMessage, "UPDATE PROGRESS %d %%",msg.data);
+        // For progress messages data is a percentage, not a timeout.
+        xTimerStop(hideMessageTimer, 0);
     } else {
         debug("set_message",message.c_str());
         lv_label_set_text(ui_LabelAboutMessage, message.c_str());
@@ -559,11 +562,14 @@ void set_message(uiQueueMessage msg)
     
     lv_obj_clear_flag(ui_PanelPaymentMessage, LV_OBJ_FLAG_HIDDEN);
 
-    if (msg.data > 0)
+    if (msg.type != SHOW_MESSAGE_UPDATE_PROGRESS && msg.data > 0)
     {
         xTimerChangePeriod(hideMessageTimer, pdMS_TO_TICKS(msg.data),1000);  // this should also start the timer
         xTimerReset(hideMessageTimer,1000);
     }
+
+    lv_task_handler();
+    gfx->flush();
 }
 
 // display the qr code on the payment screen
@@ -861,7 +867,7 @@ void ui_event_button_pin_number_clicked(lv_event_t *e)
     }
 
     ui_PinEnteredPin += digit;
-    ui_PinHidePin += digit;
+    ui_PinHidePin += "*";
 
     lv_label_set_text(ui_LabelPinMessage, ui_PinHidePin.c_str());
 }
@@ -1152,6 +1158,19 @@ void ui_ScreenAdmin_screen_init(void)
     lv_obj_set_style_text_opa(ui_LabelAdminCalibrationTicks, 255, LV_STATE_DEFAULT);
     // lv_obj_set_style_text_font(ui_LabelAdminCalibrationTicks, &lv_font_montserrat_16, LV_STATE_DEFAULT);
     y += 30;
+
+    // Calibration data
+    ui_LabelFirmwareVersion = lv_label_create(ui_ScreenAdmin);
+    lv_obj_set_width(ui_LabelFirmwareVersion, LV_SIZE_CONTENT);  /// 1
+    lv_obj_set_height(ui_LabelFirmwareVersion, LV_SIZE_CONTENT); /// 1
+    lv_obj_set_x(ui_LabelFirmwareVersion, 10);
+    lv_obj_set_y(ui_LabelFirmwareVersion, y);
+    lv_label_set_text(ui_LabelFirmwareVersion, "Version: 971727");
+    lv_obj_set_style_text_color(ui_LabelFirmwareVersion, lv_color_hex(COLOR_TEXT), LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui_LabelFirmwareVersion, 255, LV_STATE_DEFAULT);
+    // lv_obj_set_style_text_font(ui_LabelAdminCalibrationTicks, &lv_font_montserrat_16, LV_STATE_DEFAULT);
+    y += 30;
+
 
     // free drink button
     ui_ButtonAdminFree = lv_btn_create(ui_ScreenAdmin);

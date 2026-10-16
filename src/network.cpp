@@ -79,7 +79,7 @@ void check_invoice_received() {
 
 // report the state of wifi and websocket to the UI queue
 void network_report_state() {    
-    debug("network_report_state","Reporting network state");
+    // debug("network_report_state","Reporting network state");
     ui_queue_send_message(REPORT_WIFI_STATE,WiFi.status());
     ui_queue_send_message(REPORT_WEBSOCKET_STATE, networkWebSocketState);
     ui_queue_send_message(REPORT_WIFI_RSSI,WiFi.RSSI());
@@ -126,11 +126,14 @@ bool main_firmware_update() {
 }
 
 void firmwareUpdateFinished() {
+    debug("firmwareUpdateFinished","Firmware Update Finished");
     ui_queue_send_message(SHOW_MESSAGE_RESTARTING,0);
 }
 
 void firmwareUpdateProgress(int cur, int total) {
-    ui_queue_send_message(SHOW_MESSAGE_UPDATE_PROGRESS,100 * cur / total);
+    if (total > 0) {
+        ui_queue_send_message(SHOW_MESSAGE_UPDATE_PROGRESS,100ULL * cur / total);
+    }
 }
 
 void firmwareUpdateError(int err) {
@@ -181,6 +184,7 @@ void firmware_update() {
 
     httpUpdate.onEnd(firmwareUpdateFinished);
     httpUpdate.onProgress(firmwareUpdateProgress);
+
     httpUpdate.rebootOnUpdate(true);
 
 #define FIRMWARE_HOST "firmware.bitcointaps.com"
@@ -521,6 +525,7 @@ void _network_wifi_check_websocket() {
     {
         String wspath = "/partytap/api/v1/ws/" + deviceid;
 
+        webSocket.setReconnectInterval(1000);
         webSocket.beginSSL(lnbitshost, 443, wspath);
         //webSocket.enableHeartbeat(5000, 2000, 1);
         //webSocket.setReconnectInterval(500);
@@ -574,19 +579,29 @@ void _network_check() {
 
 }
 
+// Timer callbacks share the timer service with the UI refresh timers. Never
+// block it when the network task is busy (for example downloading firmware).
+static void network_queue_timer_message(NetworkQueueMessageType type)
+{
+    networkQueueMessage msg = {type, 0};
+    if (networkQueue != NULL) {
+        xQueueSend(networkQueue, &msg, 0);
+    }
+}
+
 void network_state_report_timer_cb(TimerHandle_t timer)
 {
-    network_queue_send_message(TASK_NOTIFICATION_NETWORK_STATE, 0);
+    network_queue_timer_message(TASK_NOTIFICATION_NETWORK_STATE);
 }
 
 void network_check_timer_cb(TimerHandle_t timer)
 {
-    network_queue_send_message(TASK_NOTIFICATION_NETWORK_CHECK, 0);
+    network_queue_timer_message(TASK_NOTIFICATION_NETWORK_CHECK);
 }
 
 void network_loop_timer_cb(TimerHandle_t timer)
 {
-    network_queue_send_message(TASK_NOTIFICATION_NETWORK_LOOP, 0);
+    network_queue_timer_message(TASK_NOTIFICATION_NETWORK_LOOP);
 }
 
 void network_invoice_received_timer_cb(TimerHandle_t timer)
